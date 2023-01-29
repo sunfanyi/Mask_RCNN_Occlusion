@@ -1,0 +1,8 @@
+numpy
+scipy
+Pillow
+cython
+scikit-image
+keras==2.2.5
+h5py
+jupyter
