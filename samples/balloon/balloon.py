@@ -79,7 +79,7 @@ class BalloonConfig(Config):
 #  Dataset
 ############################################################
 
-class BalloonDataset(utils.Dataset):
+class  BalloonDataset(utils.Dataset):
 
     def load_balloon(self, dataset_dir, subset):
         """Load a subset of the Balloon dataset.

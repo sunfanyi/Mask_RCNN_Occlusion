@@ -496,40 +496,40 @@ if __name__ == '__main__':
 
         # *** This training schedule is an example. Update to your needs ***
 
-        # Training - Stage 1
-        print("Training network heads")
-        model.train(dataset_train, dataset_val,
-                    learning_rate=config.LEARNING_RATE,
-                    epochs=40,
-                    layers='heads',
-                    augmentation=augmentation)
-
-        # Training - Stage 2
-        # Finetune layers from ResNet stage 4 and up
-        print("Fine tune Resnet stage 4 and up")
-        model.train(dataset_train, dataset_val,
-                    learning_rate=config.LEARNING_RATE,
-                    epochs=120,
-                    layers='4+',
-                    augmentation=augmentation)
-
-        # Training - Stage 3
-        # Fine tune all layers
-        print("Fine tune all layers")
-        model.train(dataset_train, dataset_val,
-                    learning_rate=config.LEARNING_RATE / 10,
-                    epochs=160,
-                    layers='all',
-                    augmentation=augmentation)
-
-    elif args.command == "evaluate":
-        # Validation dataset
-        dataset_val = CocoDataset()
-        val_type = "val" if args.year in '2017' else "minival"
-        coco = dataset_val.load_coco(args.dataset, val_type, year=args.year, return_coco=True, auto_download=args.download)
-        dataset_val.prepare()
-        print("Running COCO evaluation on {} images.".format(args.limit))
-        evaluate_coco(model, dataset_val, coco, "bbox", limit=int(args.limit))
-    else:
-        print("'{}' is not recognized. "
-              "Use 'train' or 'evaluate'".format(args.command))
+    #     # Training - Stage 1
+    #     print("Training network heads")
+    #     model.train(dataset_train, dataset_val,
+    #                 learning_rate=config.LEARNING_RATE,
+    #                 epochs=40,
+    #                 layers='heads',
+    #                 augmentation=augmentation)
+    #
+    #     # Training - Stage 2
+    #     # Finetune layers from ResNet stage 4 and up
+    #     print("Fine tune Resnet stage 4 and up")
+    #     model.train(dataset_train, dataset_val,
+    #                 learning_rate=config.LEARNING_RATE,
+    #                 epochs=120,
+    #                 layers='4+',
+    #                 augmentation=augmentation)
+    #
+    #     # Training - Stage 3
+    #     # Fine tune all layers
+    #     print("Fine tune all layers")
+    #     model.train(dataset_train, dataset_val,
+    #                 learning_rate=config.LEARNING_RATE / 10,
+    #                 epochs=160,
+    #                 layers='all',
+    #                 augmentation=augmentation)
+    #
+    # elif args.command == "evaluate":
+    #     # Validation dataset
+    #     dataset_val = CocoDataset()
+    #     val_type = "val" if args.year in '2017' else "minival"
+    #     coco = dataset_val.load_coco(args.dataset, val_type, year=args.year, return_coco=True, auto_download=args.download)
+    #     dataset_val.prepare()
+    #     print("Running COCO evaluation on {} images.".format(args.limit))
+    #     evaluate_coco(model, dataset_val, coco, "bbox", limit=int(args.limit))
+    # else:
+    #     print("'{}' is not recognized. "
+    #           "Use 'train' or 'evaluate'".format(args.command))

@@ -30,7 +30,7 @@ from distutils.version import LooseVersion
 assert LooseVersion(tf.__version__) >= LooseVersion("1.3")
 assert LooseVersion(keras.__version__) >= LooseVersion('2.0.8')
 
-os.environ["NCPUS"] = "4"
+# os.environ["NCPUS"] = "4"  # comment for HPC and uncomment locally
 
 ############################################################
 #  Utility Functions
@@ -2373,10 +2373,10 @@ class MaskRCNN():
             validation_data=val_generator,
             validation_steps=self.config.VALIDATION_STEPS,
             max_queue_size=100,
-            # workers=workers,
+            workers=workers,
             # workers=int(os.environ["NCPUS"]),  # Linux
-            workers=1,  # Windows
-            use_multiprocessing=False,  # True in Linux and False in windows
+            # workers=1,  # Windows
+            use_multiprocessing=True,  # True in Linux and False in windows
         )
         self.epoch = max(self.epoch, epochs)
 
