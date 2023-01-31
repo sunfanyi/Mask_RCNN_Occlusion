@@ -21,7 +21,7 @@ import numpy as np
 import skimage.io
 
 dataset_dir = r'..\..\datasets\dataset_occluded'
-annotation_dir = os.path.join(dataset_dir, 'annotations')
+annos_dir = os.path.join(dataset_dir, 'annotations')
 images_dir = os.path.join(dataset_dir, 'images')
 lists_dir = os.path.join(dataset_dir, 'lists')
 main_dict = {'images': [], 'categories': [{'id': 1, 'name': 'aeroplane'},
@@ -40,6 +40,17 @@ main_dict = {'images': [], 'categories': [{'id': 1, 'name': 'aeroplane'},
 id_from_name_map = {info['name']: info['id']
                     for info in main_dict['categories']}
 
+
+def add_image(image_info, source, image_id, path, **kwargs):
+    info = {
+        "id": image_id,
+        "source": source,
+        "path": path,
+    }
+    info.update(kwargs)
+    image_info.append(info)
+
+
 for lst in os.listdir(lists_dir)[:1]:
     # for each par_dir
     par_dir = lst.split('.')[0]
@@ -56,7 +67,7 @@ for lst in os.listdir(lists_dir)[:1]:
         height, width = image.shape[:2]
 
         # get annotation information from npz
-        npz_path = os.path.join(annotation_dir, par_dir, image_id) + '.npz'
+        npz_path = os.path.join(annos_dir, par_dir, image_id) + '.npz'
         npz_info = np.load(npz_path, allow_pickle=True)
         category_name = str(npz_info['category'])
         annotations = [{'segmentation': npz_info['mask'].tolist(),
@@ -67,38 +78,16 @@ for lst in os.listdir(lists_dir)[:1]:
                         'occluder_box': npz_info['occluder_box'].tolist(),
                         'occluder_mask': npz_info['occluder_mask'].tolist()}]
 
-        info = {'id': image_id,
-                'source': 'occlusion',
-                'path': image_path,
-                'width': width,
-                'height': height,
-                'par_dir': par_dir,
-                'annotataions': annotations}
-        # info = {'id': image_id,
-        #         'source': 'occlusion',
-        #         'path': image_path,
-        #         'width': width,
-        #         'height': height,
-        #         'par_dir': par_dir}
-        main_dict['images'].append(info)
+        add_image(main_dict['images'],
+                  source='occlusion',
+                  image_id=image_id,
+                  path=image_path,
+                  width=width,
+                  height=height,
+                  par_dir=par_dir,
+                  annotations=annotations)
     break
 
 
-# class NumpyEncoder(json.JSONEncoder):
-#     """ Special json encoder for numpy types """
-#     def default(self, obj):
-#         if isinstance(obj, np.integer):
-#             return int(obj)
-#         elif isinstance(obj, np.floating):
-#             return float(obj)
-#         elif isinstance(obj, np.ndarray):
-#             return obj.tolist()
-#         return json.JSONEncoder.default(self, obj)
-
-
-with open("annotations_occlusion.json", "w") as outfile:
-    json.dump(main_dict, outfile)
-# dumped = json.dumps(main_dict, cls=NumpyEncoder)
-#
-# with open("annotations_occlusion.json", 'w') as f:
-#     json.dump(dumped, f)
+# with open("annotations_occlusion.json", "w") as outfile:
+#     json.dump(main_dict, outfile)

@@ -76,7 +76,6 @@ image_info = []
 
 # Add images
 for i in image_ids:
-    print(i)
     image_info_dir = {
         "id": i,
         "source": 'coco',
@@ -176,7 +175,7 @@ for annotation in annotations:
                 m = np.ones([example_info["height"], example_info["width"]], dtype=bool)
         instance_masks.append(m)
         mask_class_ids.append(class_id)
-
+    break
 # Pack instance masks into an array
 if mask_class_ids:
     mask = np.stack(instance_masks, axis=2).astype(np.bool)
