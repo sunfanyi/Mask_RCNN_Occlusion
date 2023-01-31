@@ -19,26 +19,27 @@ import os
 import json
 import numpy as np
 import skimage.io
+from skimage import measure
 
 dataset_dir = r'..\..\datasets\dataset_occluded'
 annos_dir = os.path.join(dataset_dir, 'annotations')
 images_dir = os.path.join(dataset_dir, 'images')
 lists_dir = os.path.join(dataset_dir, 'lists')
-main_dict = {'images': [], 'categories': [{'id': 1, 'name': 'aeroplane'},
-                                          {'id': 2, 'name': 'bicycle'},
-                                          {'id': 3, 'name': 'boat'},
-                                          {'id': 4, 'name': 'bottle'},
-                                          {'id': 5, 'name': 'bus'},
-                                          {'id': 6, 'name': 'car'},
-                                          {'id': 7, 'name': 'chair'},
-                                          {'id': 8, 'name': 'diningtable'},
-                                          {'id': 9, 'name': 'motorbike'},
-                                          {'id': 10, 'name': 'sofa'},
-                                          {'id': 11, 'name': 'train'},
-                                          {'id': 12, 'name': 'tvmonitor'}]}
 
+cateogories = [{'id': 1, 'name': 'aeroplane'},
+               {'id': 2, 'name': 'bicycle'},
+               {'id': 3, 'name': 'boat'},
+               {'id': 4, 'name': 'bottle'},
+               {'id': 5, 'name': 'bus'},
+               {'id': 6, 'name': 'car'},
+               {'id': 7, 'name': 'chair'},
+               {'id': 8, 'name': 'diningtable'},
+               {'id': 9, 'name': 'motorbike'},
+               {'id': 10, 'name': 'sofa'},
+               {'id': 11, 'name': 'train'},
+               {'id': 12, 'name': 'tvmonitor'}]
 id_from_name_map = {info['name']: info['id']
-                    for info in main_dict['categories']}
+                    for info in cateogories}
 
 
 def add_image(image_info, source, image_id, path, **kwargs):
@@ -51,43 +52,76 @@ def add_image(image_info, source, image_id, path, **kwargs):
     image_info.append(info)
 
 
-for lst in os.listdir(lists_dir)[:1]:
-    # for each par_dir
-    par_dir = lst.split('.')[0]
-    with open(os.path.join(lists_dir, lst)) as file:
-        file_names = file.readlines()
-    for file_name in file_names:
-        # for each image
-        file_name = file_name.strip()
-        image_id = file_name.split('.')[0]
-        image_path = os.path.join(images_dir, par_dir, file_name)
+def mask2polygon(mask):
+    contours = measure.find_contours(mask, 0.5)
+    res = []
+    for contour in contours:
+        contour = np.flip(contour, axis=1)
+        segmentation = contour.ravel().tolist()
+        res.append(segmentation)
 
-        # get height and width from jpeg
-        image = skimage.io.imread(image_path)
-        height, width = image.shape[:2]
-
-        # get annotation information from npz
-        npz_path = os.path.join(annos_dir, par_dir, image_id) + '.npz'
-        npz_info = np.load(npz_path, allow_pickle=True)
-        category_name = str(npz_info['category'])
-        annotations = [{'segmentation': npz_info['mask'].tolist(),
-                        'iscrowd': 0,
-                        'image_id': image_id,
-                        'bbox': npz_info['box'].tolist(),
-                        'category_id': id_from_name_map[category_name],
-                        'occluder_box': npz_info['occluder_box'].tolist(),
-                        'occluder_mask': npz_info['occluder_mask'].tolist()}]
-
-        add_image(main_dict['images'],
-                  source='occlusion',
-                  image_id=image_id,
-                  path=image_path,
-                  width=width,
-                  height=height,
-                  par_dir=par_dir,
-                  annotations=annotations)
-    break
+    return res
 
 
-# with open("annotations_occlusion.json", "w") as outfile:
-#     json.dump(main_dict, outfile)
+def add_image_to_list(image_info, file_name, par_dir):
+    image_id = file_name.split('.')[0]
+    image_path = os.path.join(images_dir, par_dir, file_name)
+
+    # get height and width from jpeg
+    image = skimage.io.imread(image_path)
+    height, width = image.shape[:2]
+
+    # get annotation information from npz
+    npz_path = os.path.join(annos_dir, par_dir, image_id) + '.npz'
+    npz_info = np.load(npz_path, allow_pickle=True)
+    category_name = str(npz_info['category'])
+
+    # bbox format is [y1, y2, x1, x2, img_h, img_w]
+    # this is replaced to coco format with [y1, x1, y2, x2]
+    [y1, y2, x1, x2] = npz_info['box'][:4].astype('float')
+    bbox = [y1, x1, y2, x2]
+    occluder_box = npz_info['occluder_box'][:, :4].astype('float')
+    occluder_box[:, [1, 2]] = occluder_box[:, [2, 1]]
+
+    # convert mask to polygon format to save memory
+    mask = (npz_info['mask'] > 200)  # convert to boolean
+    mask = mask2polygon(mask)
+    occluder_mask = mask2polygon(npz_info['occluder_mask'])
+
+    annotations = [{'segmentation': mask,
+                    'iscrowd': 0,
+                    'image_id': image_id,
+                    'bbox': bbox,
+                    'category_id': id_from_name_map[category_name],
+                    'category_name': category_name,
+                    'occluder_box': occluder_box.tolist(),
+                    'occluder_mask': occluder_mask}]
+
+    add_image(image_info,
+              source='occlusion',
+              image_id=image_id,
+              path=image_path,
+              width=width,
+              height=height,
+              par_dir=par_dir,
+              annotations=annotations)
+    return image_info
+
+
+if __name__ == "__main__":
+    count = 0
+    main_dict = {'images': [], 'categories': cateogories}
+    for lst in os.listdir(lists_dir):
+        # for each par_dir
+        par_dir = lst.split('.')[0]
+        with open(os.path.join(lists_dir, lst)) as file:
+            file_names = file.readlines()
+        for file_name in file_names:
+            # for each image
+            file_name = file_name.strip()
+
+            main_dict['images'] = add_image_to_list(main_dict['images'],
+                                                    file_name, par_dir)
+        break
+    # with open("annotations_occlusion.json", "w") as outfile:
+    #     json.dump(main_dict, outfile)

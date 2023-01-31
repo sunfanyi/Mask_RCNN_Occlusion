@@ -8,48 +8,48 @@
 
 import os
 import sys
+import json
 import numpy as np
-import skimage.io
 import matplotlib.pyplot as plt
+import skimage.io
+from skimage import measure
+from skimage.draw import polygon
 from pycocotools import mask as maskUtils
-from mrcnn.utils import minimize_mask, expand_mask
+from make_json_occlusion import add_image_to_list
 
 ROOT_DIR = os.path.abspath('../')
 sys.path.append(ROOT_DIR)
 # from mrcnn import visualize
 from mrcnn.visualize import display_images, draw_box
+from mrcnn.utils import minimize_mask, expand_mask
 
 dataset_dir = r'..\..\datasets\dataset_occluded'
-annos_dir = os.path.join(dataset_dir, 'annotations')
-images_dir = os.path.join(dataset_dir, 'images')
 lists_dir = os.path.join(dataset_dir, 'lists')
-main_dict = {'images': [], 'categories': [{'id': 1, 'name': 'aeroplane'},
-                                          {'id': 2, 'name': 'bicycle'},
-                                          {'id': 3, 'name': 'boat'},
-                                          {'id': 4, 'name': 'bottle'},
-                                          {'id': 5, 'name': 'bus'},
-                                          {'id': 6, 'name': 'car'},
-                                          {'id': 7, 'name': 'chair'},
-                                          {'id': 8, 'name': 'diningtable'},
-                                          {'id': 9, 'name': 'motorbike'},
-                                          {'id': 10, 'name': 'sofa'},
-                                          {'id': 11, 'name': 'train'},
-                                          {'id': 12, 'name': 'tvmonitor'}]}
-
-id_from_name_map = {info['name']: info['id']
-                    for info in main_dict['categories']}
 
 
-def add_image(image_info, source, image_id, path, **kwargs):
-    info = {
-        "id": image_id,
-        "source": source,
-        "path": path,
-    }
-    info.update(kwargs)
-    image_info.append(info)
+def mask2polygon(mask):
+    contours = measure.find_contours(mask, 0.5)
+    res = []
+    for contour in contours:
+        contour = np.flip(contour, axis=1)
+        segmentation = contour.ravel().tolist()
+        res.append(segmentation)
+
+    return res
 
 
+def segm2mask(segm, height, width):
+    # segm = ann['segmentation']
+    rles = maskUtils.frPyObjects(segm, height, width)
+    rle = maskUtils.merge(rles)
+    mask = maskUtils.decode(rle)
+    return mask
+
+
+# path = os.path.join(dataset_dir, 'annotations_occlusion_all.json')
+# image_info = json.load(open(path))
+
+image_info = []
 for lst in [os.listdir(lists_dir)[0], os.listdir(lists_dir)[10]]:
     # for each par_dir
     par_dir = lst.split('.')[0]
@@ -58,74 +58,39 @@ for lst in [os.listdir(lists_dir)[0], os.listdir(lists_dir)[10]]:
     for file_name in file_names:
         # for each image
         file_name = file_name.strip()
-        image_id = file_name.split('.')[0]
-        image_path = os.path.join(images_dir, par_dir, file_name)
-
-        # get height and width from jpeg
-        image = skimage.io.imread(image_path)
-        height, width = image.shape[:2]
-
-        # get annotation information from npz
-        npz_path = os.path.join(annos_dir, par_dir, image_id) + '.npz'
-        npz_info = np.load(npz_path, allow_pickle=True)
-        category_name = str(npz_info['category'])
-
-        # bbox format is [y1, y2, x1, x2, img_h, img_w]
-        # this is replaced to coco format with [y1, x1, y2, x2]
-        [y1, y2, x1, x2] = npz_info['box'][:4]
-        bbox = [y1, x1, y2, x2]
-        occluder_box = npz_info['occluder_box'][:, :4]
-        occluder_box[:, [1, 2]] = occluder_box[:, [2, 1]]
-
-        annotations = [{'segmentation': npz_info['mask'].tolist(),
-                        'iscrowd': 0,
-                        'image_id': image_id,
-                        'bbox': bbox,
-                        'category_id': id_from_name_map[category_name],
-                        'category_name': category_name,
-                        'occluder_box': occluder_box.tolist(),
-                        'occluder_mask': npz_info['occluder_mask'].tolist()}]
-
-        add_image(main_dict['images'],
-                  source='occlusion',
-                  image_id=image_id,
-                  path=image_path,
-                  width=width,
-                  height=height,
-                  par_dir=par_dir,
-                  annotations=annotations)
+        image_info = add_image_to_list(image_info, file_name, par_dir)
         break
 
-
-image_info = main_dict['images']
 # load image
 for image in image_info:
+    height = image['height']
+    width = image['width']
+
     _image = skimage.io.imread(image['path'])
     plt.figure()
-    plt.title("H x W={}x{}".format(image['height'], image['width']))
+    plt.title("H x W={}x{}".format(height, width))
     plt.axis('off')
     plt.imshow(_image.astype(np.uint8))
     plt.show()
 
-    annos = image['annotations'][0]
-    mask = annos['segmentation']
-    mask = np.array(mask)
-    mask = (mask > 200)  # convert to boolean
+    ann = image['annotations'][0]
+    segm = ann['segmentation']
+    mask = segm2mask(segm, height, width)
     plt.figure()
     plt.title('segmentation:' + image['annotations'][0]['category_name'])
     plt.axis('off')
     plt.imshow(mask.astype(np.uint8))
     plt.show()
 
-    occluder_mask = annos['occluder_mask']
-    occluder_mask = np.array(occluder_mask)
+    segm = ann['occluder_mask']
+    occluder_mask = segm2mask(segm, height, width)
     plt.figure()
     plt.title('occluder_mask:' + image['annotations'][0]['category_name'])
     plt.axis('off')
     plt.imshow(occluder_mask.astype(np.uint8))
     plt.show()
 
-    box = annos['bbox']
+    box = [int(i) for i in ann['bbox']]
     _image_temp = draw_box(_image, box, np.array([255, 0, 0]))
     plt.figure()
     plt.title("bbox")
@@ -134,15 +99,15 @@ for image in image_info:
     plt.show()
 
     _image_temp = _image.copy()
-    for box in annos['occluder_box']:
-        _image_temp = draw_box(_image, box, np.array([255, 0, 0]))
+    for occluder_box in ann['occluder_box']:
+        occluder_box = [int(i) for i in occluder_box]
+        _image_temp = draw_box(_image, occluder_box, np.array([255, 0, 0]))
     plt.figure()
     plt.title("occluder_box")
     plt.axis('off')
     plt.imshow(_image_temp.astype(np.uint8))
     plt.show()
 
-    box = annos['bbox']
     mini_mask = minimize_mask([box], np.expand_dims(mask, axis=-1), (56, 56))
     plt.figure()
     plt.title('mini_mask:' + image['annotations'][0]['category_name'])
@@ -150,8 +115,7 @@ for image in image_info:
     plt.imshow(mini_mask[:, :, 0].astype(np.uint8))
     plt.show()
 
-    mask_expanded = expand_mask([box], mini_mask,
-                                (image['height'], image['width']))
+    mask_expanded = expand_mask([box], mini_mask, (height, width))
     plt.figure()
     plt.title('expanded_mask:' + image['annotations'][0]['category_name'])
     plt.axis('off')
