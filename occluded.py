@@ -30,8 +30,8 @@ image_info_dir = []
 class_ids = []
 class_names = []
 image_ids = []
-for file in files[:100]:
-    image_ids.append(filename.split('.')[0].split('n')[1])
+for file in files[1]:
+    image_ids.append(file.split('.')[0].split('n')[1])
     annos = np.load(file, allow_pickle=True)
     # if str(annos['category']) not in class_map.values():
     if str(annos['category']) not in class_names:
@@ -58,12 +58,12 @@ for file in files[:100]:
 #         annotations=coco.loadAnns(coco.getAnnIds(
 #             imgIds=[i], catIds=class_ids, iscrowd=None)))
 
-class_ids = np.arange(len(class_names) + 1)  # 0th is the background
-class_names = ['BG'] + class_names
-
-for i in range(1, len(class_names)):
-    class_info.append({
-        "source": 'occlusion',
-        "id": class_ids[i],
-        "name": class_names[i],
-    })
+# class_ids = np.arange(len(class_names) + 1)  # 0th is the background
+# class_names = ['BG'] + class_names
+#
+# for i in range(1, len(class_names)):
+#     class_info.append({
+#         "source": 'occlusion',
+#         "id": class_ids[i],
+#         "name": class_names[i],
+#     })
