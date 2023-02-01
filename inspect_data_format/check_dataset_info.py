@@ -11,8 +11,9 @@ import json
 import numpy as np
 import matplotlib.pyplot as plt
 
-dataset_dir = r'..\..\datasets\dataset_occluded'
-lists_dir = os.path.join(dataset_dir, 'lists')
 
-path = os.path.join(dataset_dir, 'annotations_occlusion_all.json')
-image_info = json.load(open(path))
+# dataset_dir = r'..\..\datasets\dataset_occluded'
+# lists_dir = os.path.join(dataset_dir, 'lists')
+#
+# path = os.path.join(dataset_dir, 'annotations_occlusion_all.json')
+image_info = json.load(open('../occlusion/annotations_occlusion_all.json'))

@@ -8,18 +8,13 @@
 # The raw annotation files are very slow to read (in npz). Therefore json files
 # will be created and useful information will be written into it.
 
-# -*- coding: utf-8 -*-
-# @File    : occluded.py
-# @Time    : 30/01/2023
-# @Author  : Fanyi Sun
-# @Github  : https://github.com/sunfanyi
-# @Software: PyCharm
-
 import os
 import json
 import numpy as np
 import skimage.io
 from skimage import measure
+
+from pycococreatortools.pycococreatortools import binary_mask_to_polygon
 
 dataset_dir = r'..\..\datasets\dataset_occluded'
 annos_dir = os.path.join(dataset_dir, 'annotations')
@@ -52,17 +47,6 @@ def add_image(image_info, source, image_id, path, **kwargs):
     image_info.append(info)
 
 
-def mask2polygon(mask):
-    contours = measure.find_contours(mask, 0.5)
-    res = []
-    for contour in contours:
-        contour = np.flip(contour, axis=1)
-        segmentation = contour.ravel().tolist()
-        res.append(segmentation)
-
-    return res
-
-
 def add_image_to_list(image_info, file_name, par_dir):
     image_id = file_name.split('.')[0]
     image_path = os.path.join(images_dir, par_dir, file_name)
@@ -85,8 +69,9 @@ def add_image_to_list(image_info, file_name, par_dir):
 
     # convert mask to polygon format to save memory
     mask = (npz_info['mask'] > 200)  # convert to boolean
-    mask = mask2polygon(mask)
-    occluder_mask = mask2polygon(npz_info['occluder_mask'])
+    mask = binary_mask_to_polygon(mask, tolerance=2)
+    occluder_mask = npz_info['occluder_mask']
+    occluder_mask = binary_mask_to_polygon(occluder_mask, tolerance=2)
 
     annotations = [{'segmentation': mask,
                     'iscrowd': 0,
@@ -122,6 +107,5 @@ if __name__ == "__main__":
 
             main_dict['images'] = add_image_to_list(main_dict['images'],
                                                     file_name, par_dir)
-        break
     # with open("annotations_occlusion.json", "w") as outfile:
     #     json.dump(main_dict, outfile)
