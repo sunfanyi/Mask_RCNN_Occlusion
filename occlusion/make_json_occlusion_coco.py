@@ -7,6 +7,7 @@
 
 # The raw annotation files are very slow to read (in npz). Therefore json files
 # will be created and useful information will be written into it.
+# This file saves all the data in coco format
 
 import os
 import json
@@ -49,14 +50,14 @@ def add_image(image_info, source, image_id, path, **kwargs):
     image_info.append(info)
 
 
-def create_image_info(image_id, file_name, par_dir, image_size):
+def create_image_info(image_id, file_name, image_size):
                       # date_captured=datetime.datetime.utcnow().isoformat(' '),
                       # license_id=1, coco_url="", flickr_url=""):
 
     image_info = {
             "id": image_id,
             "file_name": file_name,
-            "par_dir": par_dir,
+            # "par_dir": par_dir,
             "width": image_size[0],
             "height": image_size[1],
             # "date_captured": date_captured,
@@ -107,15 +108,18 @@ def add_image_to_list(main_dict, file_name, par_dir, anno_id):
     image_id = file_name.split('.')[0]
     image_path = os.path.join(images_dir, par_dir, file_name)
 
+    image_id = par_dir + '\\' + image_id
+    file_name = par_dir + '\\' + file_name
+
     # get height and width from jpeg
     image = skimage.io.imread(image_path)
     image_size = image.shape[:2]
 
-    image_info = create_image_info(image_id, file_name, par_dir, image_size)
+    image_info = create_image_info(image_id, file_name, image_size)
     main_dict['images'].append(image_info)
 
     # get annotation information from npz
-    npz_path = os.path.join(annos_dir, par_dir, image_id) + '.npz'
+    npz_path = os.path.join(annos_dir, image_id) + '.npz'
     npz_info = np.load(npz_path, allow_pickle=True)
     category_name = str(npz_info['category'])
     category_id = id_from_name_map[category_name]
@@ -158,6 +162,8 @@ if __name__ == "__main__":
 
             main_dict, anno_id = add_image_to_list(main_dict, file_name,
                                                    par_dir, anno_id)
-
-    with open("annotations_occlusion_coco_format.json", "w") as outfile:
+            break
+    target_path = os.path.join(dataset_dir,
+                               "occlusion_coco_format_short.json")
+    with open(target_path, "w") as outfile:
         json.dump(main_dict, outfile)

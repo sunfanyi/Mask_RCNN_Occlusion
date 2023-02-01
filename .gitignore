@@ -6,6 +6,7 @@ logs/
 *.jpeg
 *.npz
 *.json
+*.pbs
 results/
 temp/
 test/

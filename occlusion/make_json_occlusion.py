@@ -107,5 +107,8 @@ if __name__ == "__main__":
 
             main_dict['images'] = add_image_to_list(main_dict['images'],
                                                     file_name, par_dir)
-    # with open("annotations_occlusion.json", "w") as outfile:
+
+    target_path = os.path.join(dataset_dir,
+                               "occlusion_coco_format.json")
+    # with open(target_path, "w") as outfile:
     #     json.dump(main_dict, outfile)

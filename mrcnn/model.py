@@ -2373,8 +2373,8 @@ class MaskRCNN():
             validation_data=val_generator,
             validation_steps=self.config.VALIDATION_STEPS,
             max_queue_size=100,
-            workers=workers,
-            # workers=int(os.environ["NCPUS"]),  # Linux
+            # workers=workers,
+            workers=int(os.environ["NCPUS"]),  # Linux
             # workers=1,  # Windows
             use_multiprocessing=True,  # True in Linux and False in windows
         )

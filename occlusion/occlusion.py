@@ -12,6 +12,8 @@ import datetime
 import numpy as np
 import skimage.draw
 
+from pycocotools.coco import COCO
+
 # Root directory of the project
 ROOT_DIR = os.path.abspath("../")
 
@@ -57,7 +59,48 @@ class OcclusionConfig(Config):
 
 class OcclusionDataset(utils.Dataset):
 
-    def load_occlusion(self, dataset_dir, subset):
+    def load_occlusion(self, dataset_dir, subset, class_ids=None,
+                       return_occlusion=False):
+        occlusion = COCO(
+            "{}/occlusion_coco_format_short.json".format(dataset_dir))
+        # if subset == "minival" or subset == "valminusminival":
+        #     subset = "val"
+        image_dir = "{}/{}".format(dataset_dir, "images")
+
+        # Load all classes or a subset?
+        if not class_ids:
+            # All classes
+            class_ids = sorted(occlusion.getCatIds())
+
+        # All images or a subset?
+        if class_ids:
+            image_ids = []
+            for id in class_ids:
+                image_ids.extend(list(occlusion.getImgIds(catIds=[id])))
+            # Remove duplicates
+            image_ids = list(set(image_ids))
+        else:
+            # All images
+            image_ids = list(occlusion.imgs.keys())
+
+        # Add classes
+        for i in class_ids:
+            self.add_class("occlusion", i, occlusion.loadCats(i)[0]["name"])
+
+        # Add images
+        for i in image_ids:
+            self.add_image(
+                "occlusion", image_id=i,
+                path=os.path.join(image_dir, occlusion.imgs[i]['file_name']),
+                width=occlusion.imgs[i]["width"],
+                height=occlusion.imgs[i]["height"],
+                annotations=occlusion.loadAnns(occlusion.getAnnIds(
+                    imgIds=[i], catIds=class_ids, iscrowd=None)))
+        if return_occlusion:
+            return occlusion
 
 
 dataset_dir = os.path.abspath('../../datasets/dataset_occluded')
+dataset = OcclusionDataset()
+occlusion = dataset.load_occlusion(dataset_dir, "train", return_occlusion=True)
+dataset.prepare()
