@@ -2376,7 +2376,7 @@ class MaskRCNN():
             # workers=workers,
             workers=int(os.environ["NCPUS"]),  # Linux
             # workers=1,  # Windows
-            use_multiprocessing=True,  # True in Linux and False in windows
+            use_multiprocessing=False,  # True in Linux and False in windows
         )
         self.epoch = max(self.epoch, epochs)
 

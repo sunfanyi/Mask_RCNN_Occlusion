@@ -1,15 +1,17 @@
 # Data files and directories common in repo root
 datasets/
 logs/
+results/
+temp/
+test/
+.logfiles/
+.pbs_files/
 *.h5
 *.png
 *.jpeg
 *.npz
 *.json
 *.pbs
-results/
-temp/
-test/
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

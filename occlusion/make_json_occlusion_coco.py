@@ -40,16 +40,6 @@ id_from_name_map = {info['name']: info['id']
                     for info in cateogories}
 
 
-def add_image(image_info, source, image_id, path, **kwargs):
-    info = {
-        "id": image_id,
-        "source": source,
-        "path": path,
-    }
-    info.update(kwargs)
-    image_info.append(info)
-
-
 def create_image_info(image_id, file_name, image_size):
                       # date_captured=datetime.datetime.utcnow().isoformat(' '),
                       # license_id=1, coco_url="", flickr_url=""):
@@ -58,8 +48,8 @@ def create_image_info(image_id, file_name, image_size):
             "id": image_id,
             "file_name": file_name,
             # "par_dir": par_dir,
-            "width": image_size[0],
-            "height": image_size[1],
+            "width": image_size[1],
+            "height": image_size[0],
             # "date_captured": date_captured,
             # "license": license_id,
             # "coco_url": coco_url,
@@ -70,10 +60,12 @@ def create_image_info(image_id, file_name, image_size):
 
 
 def create_annotation_info(annotation_id, image_id, category_id, binary_mask,
-                           image_size=None, tolerance=2, bbox=None):
+                           image_size=None, tolerance=2, bbox=None,
+                           polygon_mask=True):
 
     if image_size is not None:
-        binary_mask = resize_binary_mask(binary_mask, image_size)
+        binary_mask = resize_binary_mask(binary_mask,
+                                         (image_size[1], image_size[0]))
 
     binary_mask_encoded = mask.encode(np.asfortranarray(binary_mask.astype(np.uint8)))
 
@@ -89,8 +81,10 @@ def create_annotation_info(annotation_id, image_id, category_id, binary_mask,
     if not segmentation:
         return None
 
+    m = segmentation if polygon_mask else binary_mask.tolist()
+
     annotation_info = {
-        "segmentation": segmentation,
+        "segmentation": m,
         "area": area.tolist(),
         "iscrowd": is_crowd,
         "image_id": image_id,
@@ -104,7 +98,7 @@ def create_annotation_info(annotation_id, image_id, category_id, binary_mask,
     return annotation_info
 
 
-def add_image_to_list(main_dict, file_name, par_dir, anno_id):
+def add_image_to_list(main_dict, file_name, par_dir, anno_id, polygon_mask=True):
     image_id = file_name.split('.')[0]
     image_path = os.path.join(images_dir, par_dir, file_name)
 
@@ -135,13 +129,15 @@ def add_image_to_list(main_dict, file_name, par_dir, anno_id):
     occluder_mask = npz_info['occluder_mask']
 
     annotation_info = create_annotation_info(anno_id, image_id, category_id,
-                         mask, image_size=image_size, tolerance=2, bbox=bbox)
+                         mask, image_size=image_size, tolerance=2, bbox=bbox,
+                         polygon_mask=polygon_mask)
     main_dict['annotations'].append(annotation_info)
     anno_id += 1
     # for occluder_mask in occluder_masks:
     annotation_info = create_annotation_info(anno_id, image_id,
                      id_from_name_map['occluder'], occluder_mask,
-                     image_size=image_size, tolerance=2, bbox=occluder_box)
+                     image_size=image_size, tolerance=2, bbox=occluder_box,
+                     polygon_mask=polygon_mask)
     main_dict['annotations'].append(annotation_info)
     anno_id += 1
     return main_dict, anno_id
@@ -161,9 +157,10 @@ if __name__ == "__main__":
             file_name = file_name.strip()
 
             main_dict, anno_id = add_image_to_list(main_dict, file_name,
-                                                   par_dir, anno_id)
+                                                   par_dir, anno_id,
+                                                   polygon_mask=True)
             break
     target_path = os.path.join(dataset_dir,
-                               "occlusion_coco_format_short.json")
+                               "occlusion_short.json")
     with open(target_path, "w") as outfile:
         json.dump(main_dict, outfile)

@@ -10,6 +10,8 @@ import os
 import sys
 import json
 import numpy as np
+import random
+import matplotlib
 import matplotlib.pyplot as plt
 # import skimage.io
 # from skimage import measure
@@ -17,15 +19,59 @@ import matplotlib.pyplot as plt
 # from pycocotools import mask as maskUtils
 # from make_json_occlusion import add_image_to_list
 
+import occlusion
+
 ROOT_DIR = os.path.abspath('../')
 sys.path.append(ROOT_DIR)
-# from mrcnn import visualize
+from mrcnn import visualize, utils
+from mrcnn.model import log
 # from mrcnn.visualize import display_images, draw_box
 # from mrcnn.utils import minimize_mask, expand_mask
+import occlusion
 
 dataset_dir = r'..\..\datasets\dataset_occluded'
-annotation_file = os.path.join(dataset_dir, 'occlusion_coco_format.json')
-dataset = json.load(open(annotation_file, 'r'))
+
+dataset = occlusion.OcclusionDataset()
+occlusion = dataset.load_occlusion(dataset_dir, "train", return_occlusion=True)
+dataset.prepare()
+
+
+matplotlib.use('tkagg')
+# ======================== Load image ==================================
+# n = 1
+# image_ids = np.random.choice(dataset.image_ids, 2)
+image_id = 0
+# image_id = random.choice(dataset.image_ids)
+image = dataset.load_image(image_id)
+
+# for image_id in image_ids:
+images = dataset.load_image(image_id)
+visualize.display_images([images], cols=1)
+
+
+# ========================= Display images and masks ===================
+mask, class_ids = dataset.load_mask(image_id)
+visualize.display_top_masks(image, mask, class_ids, dataset.class_names)
+plt.figure()
+plt.title('manual_mask')
+plt.axis('off')
+plt.imshow(mask[:, :, 0].astype(np.uint8))
+plt.show()
+
+# ============================== Bounding boxes =========================
+# Load mask
+mask, class_ids = dataset.load_mask(image_id)
+# Compute Bounding box
+bbox = utils.extract_bboxes(mask)
+
+# Display image and additional stats
+print("image_id ", image_id, dataset.image_reference(image_id))
+log("image", image)
+log("mask", mask)
+log("class_ids", class_ids)
+log("bbox", bbox)
+# Display image and instances
+visualize.display_instances(image, bbox, mask, class_ids, dataset.class_names)
 
 
 # # load image

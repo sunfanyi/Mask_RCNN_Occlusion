@@ -7,12 +7,12 @@
 
 import os
 import sys
-import json
-import datetime
 import numpy as np
-import skimage.draw
+import matplotlib
+matplotlib.use('tkagg')
 
 from pycocotools.coco import COCO
+from pycocotools import mask as maskUtils
 
 # Root directory of the project
 ROOT_DIR = os.path.abspath("../")
@@ -20,7 +20,7 @@ ROOT_DIR = os.path.abspath("../")
 # Import Mask RCNN
 sys.path.append(ROOT_DIR)  # To find local version of the library
 from mrcnn.config import Config
-from mrcnn import model as modellib, utils
+from mrcnn import model as modellib, utils, visualize
 
 # Path to trained weights file
 COCO_WEIGHTS_PATH = os.path.join(ROOT_DIR, "mask_rcnn_coco.h5")
@@ -60,9 +60,13 @@ class OcclusionConfig(Config):
 class OcclusionDataset(utils.Dataset):
 
     def load_occlusion(self, dataset_dir, subset, class_ids=None,
-                       return_occlusion=False):
-        occlusion = COCO(
-            "{}/occlusion_coco_format_short.json".format(dataset_dir))
+                       return_occlusion=False, mask_format='polygon'):
+        if mask_format == 'polygon':
+            occlusion = COCO(
+                "{}/occlusion_short.json".format(dataset_dir))
+        elif mask_format == 'bitmap':
+            occlusion = COCO(
+                "{}/occlusion_bitmap_short.json".format(dataset_dir))
         # if subset == "minival" or subset == "valminusminival":
         #     subset = "val"
         image_dir = "{}/{}".format(dataset_dir, "images")
@@ -100,7 +104,91 @@ class OcclusionDataset(utils.Dataset):
             return occlusion
 
 
-dataset_dir = os.path.abspath('../../datasets/dataset_occluded')
-dataset = OcclusionDataset()
-occlusion = dataset.load_occlusion(dataset_dir, "train", return_occlusion=True)
-dataset.prepare()
+    def load_mask(self, image_id, mask_format='polygon'):
+        image_info = self.image_info[image_id]
+        if image_info["source"] != "occlusion":
+            return super(OcclusionDataset, self).load_mask(image_id)
+
+        instance_masks = []
+        class_ids = []
+        annotations = self.image_info[image_id]["annotations"]
+        # Build mask of shape [height, width, instance_count] and list
+        # of class IDs that correspond to each channel of the mask.
+        for annotation in annotations:
+            class_id = self.map_source_class_id(
+                "occlusion.{}".format(annotation['category_id']))
+            if class_id:
+                if mask_format == 'polygon':
+                    m = self.annToMask(annotation, image_info["height"],
+                                       image_info["width"])
+                elif mask_format == 'bitmap':
+                    m = np.array(annotation['segmentation'])
+                # Some objects are so small that they're less than 1 pixel area
+                # and end up rounded out. Skip those objects.
+                if m.max() < 1:
+                    continue
+                # Is it a crowd? If so, use a negative class ID.
+                if annotation['iscrowd']:
+                    # Use negative class ID for crowds
+                    class_id *= -1
+                    # For crowd masks, annToMask() sometimes returns a mask
+                    # smaller than the given dimensions. If so, resize it.
+                    if m.shape[0] != image_info["height"] or m.shape[1] != image_info["width"]:
+                        m = np.ones([image_info["height"], image_info["width"]], dtype=bool)
+                instance_masks.append(m)
+                class_ids.append(class_id)
+
+        # Pack instance masks into an array
+        if class_ids:
+            mask = np.stack(instance_masks, axis=2).astype(np.bool)
+            class_ids = np.array(class_ids, dtype=np.int32)
+            return mask, class_ids
+        else:
+            # Call super class to return an empty mask
+            return super(OcclusionDataset, self).load_mask(image_id)
+
+    def image_reference(self, image_id):
+        info = self.image_info[image_id]
+        if info["source"] == "occlusion":
+            return info['id']
+        else:
+            super(OcclusionDataset, self).image_reference(image_id)
+
+
+    def annToRLE(self, ann, height, width):
+        """
+        Convert annotation which can be polygons, uncompressed RLE to RLE.
+        :return: binary mask (numpy 2D array)
+        """
+        segm = ann['segmentation']
+        if isinstance(segm, list):
+            # polygon -- a single object might consist of multiple parts
+            # we merge all parts into one mask rle code
+            rles = maskUtils.frPyObjects(segm, height, width)
+            rle = maskUtils.merge(rles)
+        elif isinstance(segm['counts'], list):
+            # uncompressed RLE
+            rle = maskUtils.frPyObjects(segm, height, width)
+        else:
+            # rle
+            rle = ann['segmentation']
+        return rle
+
+
+    def annToMask(self, ann, height, width):
+        """
+        Convert annotation which can be polygons, uncompressed RLE, or RLE to binary mask.
+        :return: binary mask (numpy 2D array)
+        """
+        rle = self.annToRLE(ann, height, width)
+        m = maskUtils.decode(rle)
+        return m
+
+
+if __name__ == '__main__':
+    dataset_dir = os.path.abspath('../../datasets/dataset_occluded')
+    dataset = OcclusionDataset()
+    occlusion = dataset.load_occlusion(dataset_dir, "train", return_occlusion=True)
+    dataset.prepare()
+
+
