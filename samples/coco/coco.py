@@ -48,7 +48,9 @@ import urllib.request
 import shutil
 
 # Root directory of the project
-ROOT_DIR = os.path.abspath("../../")
+# ROOT_DIR = os.path.abspath("../../")
+ROOT_DIR = "/rds/general/user/fs1519/home/FYP/Mask_RCNN-Occlusion"
+# ROOT_DIR = "/D:/Desktop/FYP - Robust Surgical Tool Detection and Occlusion Handling using Deep Learning/Mask_RCNN-Occulusion"
 
 # Import Mask RCNN
 sys.path.append(ROOT_DIR)  # To find local version of the library
@@ -86,6 +88,7 @@ class CocoConfig(Config):
     # Number of classes (including background)
     NUM_CLASSES = 1 + 80  # COCO has 80 classes
 
+    STEPS_PER_EPOCH = 1000  # debug HPC
 
 ############################################################
 #  Dataset

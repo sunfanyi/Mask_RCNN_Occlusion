@@ -24,7 +24,7 @@ sys.path.append(ROOT_DIR)
 # from mrcnn.visualize import display_images, draw_box
 # from mrcnn.utils import minimize_mask, expand_mask
 
-dataset_dir = r'..\..\datasets\dataset_occluded'
+dataset_dir = '../../datasets/dataset_occluded'
 
 
 # take data from json files

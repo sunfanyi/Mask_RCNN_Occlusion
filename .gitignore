@@ -4,8 +4,8 @@ logs/
 results/
 temp/
 test/
-.logfiles/
-.pbs_files/
+_logfiles/
+_pbsfiles/
 *.h5
 *.png
 *.jpeg

@@ -15,11 +15,11 @@ from pycocotools.coco import COCO
 from pycocotools import mask as maskUtils
 
 
-dataset_dir = 'D:\Desktop\FYP - Robust Surgical Tool Detection and Occlusion Handling using Deep Learning\datasets'
+dataset_dir = 'D:/Desktop/FYP - Robust Surgical Tool Detection and Occlusion Handling using Deep Learning/datasets'
 path_coco_captions = os.path.join(dataset_dir,
                                   'coco/annotations/captions_val2017.json')
 path_coco_instances = os.path.join(dataset_dir,
-                                   'coco/annotations/instances_minival2017.json')
+                                   'coco/annotations/instances_val2017.json')
 captions = json.load(open(path_coco_captions))
 # annotations = list(annotations.values())  # don't need the dict keys
 instances = json.load(open(path_coco_instances))

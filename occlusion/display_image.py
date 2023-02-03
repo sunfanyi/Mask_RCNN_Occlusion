@@ -29,7 +29,7 @@ from mrcnn.model import log
 # from mrcnn.utils import minimize_mask, expand_mask
 import occlusion
 
-dataset_dir = r'..\..\datasets\dataset_occluded'
+dataset_dir = '../../datasets/dataset_occluded'
 
 dataset = occlusion.OcclusionDataset()
 occlusion = dataset.load_occlusion(dataset_dir, "train", return_occlusion=True)
@@ -37,41 +37,42 @@ dataset.prepare()
 
 
 matplotlib.use('tkagg')
-# ======================== Load image ==================================
 # n = 1
 # image_ids = np.random.choice(dataset.image_ids, 2)
-image_id = 0
-# image_id = random.choice(dataset.image_ids)
-image = dataset.load_image(image_id)
+image_ids = [4]
+for image_id in image_ids:
+    # ======================== Load image ==================================
+    # image_id = random.choice(dataset.image_ids)
+    image = dataset.load_image(image_id)
 
-# for image_id in image_ids:
-images = dataset.load_image(image_id)
-visualize.display_images([images], cols=1)
+    # for image_id in image_ids:
+    images = dataset.load_image(image_id)
+    # visualize.display_images([images], cols=1)
 
 
-# ========================= Display images and masks ===================
-mask, class_ids = dataset.load_mask(image_id)
-visualize.display_top_masks(image, mask, class_ids, dataset.class_names)
-plt.figure()
-plt.title('manual_mask')
-plt.axis('off')
-plt.imshow(mask[:, :, 0].astype(np.uint8))
-plt.show()
+    # ========================= Display images and masks ===================
+    mask, class_ids = dataset.load_mask(image_id)
+    visualize.display_top_masks(image, mask, class_ids, dataset.class_names)
+    # plt.figure()
+    # plt.title('manual_mask')
+    # plt.axis('off')
+    # plt.imshow(mask[:, :, 0].astype(np.uint8))
+    # plt.show()
 
-# ============================== Bounding boxes =========================
-# Load mask
-mask, class_ids = dataset.load_mask(image_id)
-# Compute Bounding box
-bbox = utils.extract_bboxes(mask)
+    # ============================== Bounding boxes =========================
+    # Load mask
+    mask, class_ids = dataset.load_mask(image_id)
+    # Compute Bounding box
+    bbox = utils.extract_bboxes(mask)
 
-# Display image and additional stats
-print("image_id ", image_id, dataset.image_reference(image_id))
-log("image", image)
-log("mask", mask)
-log("class_ids", class_ids)
-log("bbox", bbox)
-# Display image and instances
-visualize.display_instances(image, bbox, mask, class_ids, dataset.class_names)
+    # Display image and additional stats
+    print("image_id ", image_id, dataset.image_reference(image_id))
+    log("image", image)
+    log("mask", mask)
+    log("class_ids", class_ids)
+    log("bbox", bbox)
+    # Display image and instances
+    visualize.display_instances(image, bbox, mask, class_ids, dataset.class_names)
 
 
 # # load image

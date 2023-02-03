@@ -31,7 +31,7 @@ from mrcnn.model import log
 # from mrcnn.visualize import display_images, draw_box
 # from mrcnn.utils import minimize_mask, expand_mask
 
-dataset_dir = r'..\..\datasets\dataset_occluded'
+dataset_dir = '../../datasets/dataset_occluded'
 
 dataset = occlusion.OcclusionDataset()
 occlusion = dataset.load_occlusion(dataset_dir, "train", return_occlusion=True,

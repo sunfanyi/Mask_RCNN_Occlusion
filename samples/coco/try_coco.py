@@ -12,3 +12,7 @@ from coco import CocoDataset
 dataset_train = CocoDataset()
 dataset_train.load_coco("../../../datasets/coco/", "train", year=2017)
 dataset_train.prepare()
+
+dataset_val = CocoDataset()
+dataset_val.load_coco("../../../datasets/coco/", "val", year=2017)
+dataset_val.prepare()
