@@ -50,7 +50,7 @@ import shutil
 # Root directory of the project
 # ROOT_DIR = os.path.abspath("../../")
 ROOT_DIR = "/rds/general/user/fs1519/home/FYP/Mask_RCNN-Occlusion"
-# ROOT_DIR = "/D:/Desktop/FYP - Robust Surgical Tool Detection and Occlusion Handling using Deep Learning/Mask_RCNN-Occulusion"
+# ROOT_DIR = "D:/Desktop/FYP - Robust Surgical Tool Detection and Occlusion Handling using Deep Learning/Mask_RCNN-Occulusion"
 
 # Import Mask RCNN
 sys.path.append(ROOT_DIR)  # To find local version of the library
@@ -88,7 +88,7 @@ class CocoConfig(Config):
     # Number of classes (including background)
     NUM_CLASSES = 1 + 80  # COCO has 80 classes
 
-    STEPS_PER_EPOCH = 1000  # debug HPC
+    STEPS_PER_EPOCH = 100  # debug HPC
 
 ############################################################
 #  Dataset
@@ -508,23 +508,23 @@ if __name__ == '__main__':
                     layers='heads',
                     augmentation=augmentation)
 
-        # # Training - Stage 2
-        # # Finetune layers from ResNet stage 4 and up
-        # print("Fine tune Resnet stage 4 and up")
-        # model.train(dataset_train, dataset_val,
-        #             learning_rate=config.LEARNING_RATE,
-        #             epochs=120,
-        #             layers='4+',
-        #             augmentation=augmentation)
-        #
-        # # Training - Stage 3
-        # # Fine tune all layers
-        # print("Fine tune all layers")
-        # model.train(dataset_train, dataset_val,
-        #             learning_rate=config.LEARNING_RATE / 10,
-        #             epochs=160,
-        #             layers='all',
-        #             augmentation=augmentation)
+        # Training - Stage 2
+        # Finetune layers from ResNet stage 4 and up
+        print("Fine tune Resnet stage 4 and up")
+        model.train(dataset_train, dataset_val,
+                    learning_rate=config.LEARNING_RATE,
+                    epochs=3,
+                    layers='4+',
+                    augmentation=augmentation)
+
+        # Training - Stage 3
+        # Fine tune all layers
+        print("Fine tune all layers")
+        model.train(dataset_train, dataset_val,
+                    learning_rate=config.LEARNING_RATE / 10,
+                    epochs=4,
+                    layers='all',
+                    augmentation=augmentation)
 
     elif args.command == "evaluate":
         # Validation dataset

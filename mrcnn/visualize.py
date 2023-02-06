@@ -165,6 +165,7 @@ def display_instances(image, boxes, masks, class_ids, class_names,
             p = Polygon(verts, facecolor="none", edgecolor=color)
             ax.add_patch(p)
     ax.imshow(masked_image.astype(np.uint8))
+    # fig.savefig('D:/Desktop/FYP - Robust Surgical Tool Detection and Occlusion Handling using Deep Learning/Mask_RCNN-Occulusion/_logfiles/example.png')
     if auto_show:
         plt.show()
 
