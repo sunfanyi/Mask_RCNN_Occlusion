@@ -15,13 +15,13 @@ from pycocotools.coco import COCO
 from pycocotools import mask as maskUtils
 
 # Root directory of the project
-# ROOT_DIR = os.path.abspath("../")
-ROOT_DIR = "/rds/general/user/fs1519/home/FYP/Mask_RCNN-Occlusion"
+ROOT_DIR = os.path.abspath("../")
+# ROOT_DIR = "/rds/general/user/fs1519/home/FYP/Mask_RCNN-Occlusion"
 
 # Import Mask RCNN
 sys.path.append(ROOT_DIR)  # To find local version of the library
 from mrcnn.config import Config
-from mrcnn import model as modellib, utils, visualize
+from mrcnn import model as modellib, utils
 
 # Path to trained weights file
 COCO_MODEL_PATH = os.path.join(ROOT_DIR, "mask_rcnn_coco.h5")
@@ -235,6 +235,14 @@ if __name__ == '__main__':
             IMAGES_PER_GPU = 1
             DETECTION_MIN_CONFIDENCE = 0
         config = InferenceConfig()
+
+    if args.occluded_only:
+        class_ids = list(range(1, 13))
+        config.NUM_CLASSES -= 1
+        config.__init__()
+    else:
+        class_ids = None
+
     config.display()
 
     # Create model
@@ -268,7 +276,6 @@ if __name__ == '__main__':
     else:
         model.load_weights(model_path, by_name=True)
 
-    class_ids = list(range(1, 13)) if args.occluded_only else None
     # Train or evaluate
     if args.command == "train":
         # Training dataset. Use the training set and 35K from the

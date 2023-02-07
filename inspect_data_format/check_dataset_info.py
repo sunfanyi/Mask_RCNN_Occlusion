@@ -22,9 +22,16 @@ dataset_dir = '../../datasets/dataset_occluded'
 path = os.path.join(dataset_dir, 'occlusion_short.json')
 image_info = json.load(open(path))
 
-# class_ids = list(range(1, 13))
-class_ids = None
+config = occlusion.OcclusionConfig()
+config.NUM_CLASSES -= 1
+
+config.display()
+
+class_ids = list(range(1, 13))
+# class_ids = None
 dataset = occlusion.OcclusionDataset()
 occlusion = dataset.load_occlusion(dataset_dir, "short", return_occlusion=True,
                                    class_ids=class_ids)
 dataset.prepare()
+
+
