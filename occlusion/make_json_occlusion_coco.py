@@ -145,10 +145,10 @@ def add_image_to_list(main_dict, file_name, par_dir, anno_id,
                                              polygon_mask=polygon_mask)
     main_dict['annotations'].append(annotation_info)
     anno_id += 1
-    return main_dict, anno_id
+    return anno_id
 
 
-def write_to_json(train_val_split=False, debug=False, write=True):
+def write_to_json(train_val_split=False, debug=False, subset=None, write=True):
     """
     train_val_split:
         folders names represent occlusion level, for example
@@ -172,48 +172,84 @@ def write_to_json(train_val_split=False, debug=False, write=True):
         val_dict = {'images': [], 'annotations': [], 'categories': cateogories}
 
         folders_per_cat = 3 if debug else 9
-        # set initial value as 9 to read from the first category
-        num_folders = folders_per_cat
+        # set initial value as 8 to read from the first category
+        num_folders = folders_per_cat - 1
 
-        train_val_ratio = 4  # train:val ~= 20:1
+        train_val_ratio = 4 if debug else 20  # train:val ~= 20:1
         anno_id = 1
         for lst in os.listdir(lists_dir):
+            if subset is not None:
+                if all(occ_level not in lst for occ_level in subset):
+                    # ignore the unwanted occlusion level
+                    num_folders += 1
+                    continue
+                else:
+                    match = list(occ_level in lst for occ_level in subset)
+                    idx = [i for i, x in enumerate(match) if x][0]
+                    str_occ_level = subset[idx]
+
             # for each par_dir
             par_dir = lst.split('.')[0]
+            print('\nextracting images from: {}...'.format(par_dir))
             with open(os.path.join(lists_dir, lst)) as file:
                 file_names = file.readlines()
             file_names = [i.strip() for i in file_names]
+            num_folders += 1
             if num_folders // folders_per_cat:  # finish browsing one category
                 # traverse to the next category and update val_id_list
                 num_folders = 0
                 val_id_list = file_names[:len(file_names) // train_val_ratio]
-            else:
-                num_folders += 1
 
+            num_train = 0
+            num_val = 0
             for file_name in file_names:
                 # for each image
                 file_name = file_name.strip()
 
                 if file_name in val_id_list:
-                    val_dict, anno_id = add_image_to_list(val_dict, file_name,
-                                                          par_dir, anno_id,
-                                                          polygon_mask=True)
+                    num_val += 1
+                    # print('Loading image to val: {}/{}'.format(par_dir,
+                    #                                            file_name))
+                    anno_id = add_image_to_list(val_dict, file_name,
+                                                par_dir, anno_id,
+                                                polygon_mask=True)
                 else:
-                    train_dict, anno_id = add_image_to_list(train_dict,
-                                                            file_name,
-                                                            par_dir, anno_id,
-                                                            polygon_mask=True)
+                    num_train += 1
+                    # print('Loading image to train: {}/{}'.format(par_dir,
+                    #                                              file_name))
+                    anno_id = add_image_to_list(train_dict, file_name,
+                                                par_dir, anno_id,
+                                                polygon_mask=True)
+
+            percent_val = num_train / num_val
+            print('train:val = {}:{} = {}:1'.format(num_train, num_val, percent_val))
 
         if debug:
-            target_path_train = os.path.join(dataset_dir,
-                                             "occlusion_train_short.json")
-            target_path_val = os.path.join(dataset_dir,
-                                           "occlusion_val_short.json")
+            if (subset is not None) and (len(subset) == 1):
+                target_path_train = os.path.join(dataset_dir,
+                                             "occlusion_train_short_{}.json".format(
+                                                 str_occ_level))
+                target_path_val = os.path.join(dataset_dir,
+                                               "occlusion_val_short_{}.json".format(
+                                                   str_occ_level))
+            else:
+                target_path_train = os.path.join(dataset_dir,
+                                                 "occlusion_train_short.json")
+                target_path_val = os.path.join(dataset_dir,
+                                               "occlusion_val_short.json")
         else:
-            target_path_train = os.path.join(dataset_dir,
-                                             "occlusion_train.json")
-            target_path_val = os.path.join(dataset_dir,
-                                           "occlusion_val.json")
+            if (subset is not None) and (len(subset) == 1):
+                target_path_train = os.path.join(dataset_dir,
+                                                 "occlusion_train_{}.json".format(
+                                                     str_occ_level))
+                target_path_val = os.path.join(dataset_dir,
+                                               "occlusion_val_{}.json".format(
+                                                   str_occ_level))
+            else:
+                target_path_train = os.path.join(dataset_dir,
+                                                 "occlusion_train.json")
+                target_path_val = os.path.join(dataset_dir,
+                                               "occlusion_val.json")
 
         if write:
             with open(target_path_train, "w") as outfile:
@@ -260,4 +296,6 @@ def write_to_json(train_val_split=False, debug=False, write=True):
 
 if __name__ == "__main__":
     # train_val_split = True
-    res = write_to_json(train_val_split=True, debug=False, write=True)
+    subset = ['FGL1_BGL1']
+    res = write_to_json(train_val_split=True, debug=False,
+                        subset=subset, write=True)

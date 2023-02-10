@@ -64,7 +64,7 @@ class OcclusionDataset(utils.Dataset):
                        return_occlusion=False, mask_format='polygon'):
         if mask_format == 'polygon':
             occlusion = COCO(
-                "{}/occlusion_{}.json".format(dataset_dir, subset))
+                "{}/occlusion_{}_FGL1_BGL1.json".format(dataset_dir, subset))
         elif mask_format == 'bitmap':
             occlusion = COCO(
                 "{}/occlusion_bitmap_short.json".format(dataset_dir))

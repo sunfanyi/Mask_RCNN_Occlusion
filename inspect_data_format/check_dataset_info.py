@@ -19,19 +19,23 @@ from occlusion import occlusion
 dataset_dir = '../../datasets/dataset_occluded'
 # lists_dir = os.path.join(dataset_dir, 'lists')
 #
-path = os.path.join(dataset_dir, 'occlusion_short.json')
+path = os.path.join(dataset_dir, 'occlusion_val_FGL1_BGL1.json')
 image_info = json.load(open(path))
 
 config = occlusion.OcclusionConfig()
 config.NUM_CLASSES -= 1
+config.__init__()
 
 config.display()
 
 class_ids = list(range(1, 13))
 # class_ids = None
-dataset = occlusion.OcclusionDataset()
-occlusion = dataset.load_occlusion(dataset_dir, "short", return_occlusion=True,
-                                   class_ids=class_ids)
-dataset.prepare()
+dataset_val = occlusion.OcclusionDataset()
+occ = dataset_val.load_occlusion(dataset_dir, "val", return_occlusion=True,
+                             class_ids=class_ids)
+dataset_val.prepare()
 
-
+dataset_train = occlusion.OcclusionDataset()
+occ = dataset_train.load_occlusion(dataset_dir, "train", return_occlusion=True,
+                             class_ids=class_ids)
+dataset_train.prepare()
