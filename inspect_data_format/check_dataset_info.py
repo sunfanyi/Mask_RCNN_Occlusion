@@ -14,12 +14,12 @@ import matplotlib.pyplot as plt
 ROOT_DIR = os.path.abspath("../")
 
 sys.path.append(ROOT_DIR)
-from occlusion import occlusion
+from occlusion_depreciated import occlusion
 
 dataset_dir = '../../datasets/dataset_occluded'
 # lists_dir = os.path.join(dataset_dir, 'lists')
 #
-path = os.path.join(dataset_dir, 'occlusion_val_FGL1_BGL1.json')
+path = os.path.join(dataset_dir, 'jsons_depreciated', 'occlusion_val_FGL1_BGL1.json')
 image_info = json.load(open(path))
 
 config = occlusion.OcclusionConfig()

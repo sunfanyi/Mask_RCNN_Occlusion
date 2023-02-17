@@ -12,6 +12,7 @@ _pbsfiles/
 *.npz
 *.json
 *.pbs
+.gitattributes
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
