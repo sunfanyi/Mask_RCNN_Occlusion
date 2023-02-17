@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 # @File    : occlusion.py
-# @Time    : 30/01/2023
+# @Time    : 17/02/2023
 # @Author  : Fanyi Sun
 # @Github  : https://github.com/sunfanyi
 # @Software: PyCharm
@@ -15,8 +15,8 @@ from pycocotools.coco import COCO
 from pycocotools import mask as maskUtils
 
 # Root directory of the project
-# ROOT_DIR = os.path.abspath("../")
-ROOT_DIR = "/rds/general/user/fs1519/home/FYP/Mask_RCNN-Occlusion"
+ROOT_DIR = os.path.abspath("../")
+# ROOT_DIR = "/rds/general/user/fs1519/home/FYP/Mask_RCNN-Occlusion"
 
 # Import Mask RCNN
 sys.path.append(ROOT_DIR)  # To find local version of the library
@@ -61,13 +61,9 @@ class OcclusionConfig(Config):
 class OcclusionDataset(utils.Dataset):
 
     def load_occlusion(self, dataset_dir, subset, class_ids=None,
-                       return_occlusion=False, mask_format='polygon'):
-        if mask_format == 'polygon':
-            occlusion = COCO(
-                "{}/jsons_depreciated/occlusion_{}_FGL1_BGL1.json".format(dataset_dir, subset))
-        elif mask_format == 'bitmap':
-            occlusion = COCO(
-                "{}/jsons_depreciated/occlusion_bitmap_short.json".format(dataset_dir))
+                       return_occlusion=False):
+        occlusion = COCO(
+            "{}/jsons_my_annos/occlusion_{}.json".format(dataset_dir, subset))
 
         image_dir = "{}/{}".format(dataset_dir, "images")
         # image_dir = "{}/{}{}".format(dataset_dir, subset, year)

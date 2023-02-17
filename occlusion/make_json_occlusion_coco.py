@@ -21,8 +21,7 @@ cateogories = [{'id': 1, 'name': 'aeroplane'},
                {'id': 4, 'name': 'bottle'},
                {'id': 5, 'name': 'bus'},
                {'id': 6, 'name': 'car'},
-               {'id': 11, 'name': 'train'},
-               {'id': 13, 'name': 'occluder'}]
+               {'id': 11, 'name': 'train'}]
 id_from_name_map = {info['name']: info['id']
                     for info in cateogories}
 
