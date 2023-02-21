@@ -2277,7 +2277,8 @@ class MaskRCNN():
             "*epoch*", "{epoch:04d}")
 
     def train(self, train_dataset, val_dataset, learning_rate, epochs, layers,
-              augmentation=None, custom_callbacks=None, no_augmentation_sources=None):
+              augmentation=None, custom_callbacks=None, no_augmentation_sources=None,
+              info=None):
         """Train the model.
         train_dataset, val_dataset: Training and validation Dataset objects.
         learning_rate: The learning rate to train with
@@ -2334,16 +2335,25 @@ class MaskRCNN():
         val_generator = data_generator(val_dataset, self.config, shuffle=True,
                                        batch_size=self.config.BATCH_SIZE)
 
-        # Create log_dir if it does not exist
         if not os.path.exists(self.log_dir):
+            if info is not None:
+                self.checkpoint_path = self.checkpoint_path.replace(self.log_dir,
+                                                        self.log_dir + '_' + info)
+                self.log_dir = self.log_dir + '_' + info
             os.makedirs(self.log_dir)
+        print(self.log_dir)
 
+        csv_path = os.path.join(self.log_dir, "train.csv")
+        csv_exists = os.path.exists(csv_path)
         # Callbacks
         callbacks = [
             keras.callbacks.TensorBoard(log_dir=self.log_dir,
-                                        histogram_freq=0, write_graph=True, write_images=False),
+                                        histogram_freq=0, write_graph=True, write_images=True),
+            # keras.callbacks.TensorBoard(log_dir=self.log_dir,
+            #                             histogram_freq={'gradients': 1}, write_graph=True, write_images=True),
             keras.callbacks.ModelCheckpoint(self.checkpoint_path,
                                             verbose=0, save_weights_only=True),
+            keras.callbacks.CSVLogger(csv_path, append=csv_exists)
         ]
 
         # Add custom callbacks to the list

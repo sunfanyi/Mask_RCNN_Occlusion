@@ -15,14 +15,15 @@ from pycocotools.coco import COCO
 from pycocotools import mask as maskUtils
 
 # Root directory of the project
-ROOT_DIR = os.path.abspath("../")
-# ROOT_DIR = "/rds/general/user/fs1519/home/FYP/Mask_RCNN-Occlusion"
+ROOT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 # Import Mask RCNN
 sys.path.append(ROOT_DIR)  # To find local version of the library
 from mrcnn.config import Config
 from mrcnn import model as modellib, utils
 
+# ROOT_DIR = os.path.abspath("../")
+ROOT_DIR = "/rds/general/user/fs1519/home/FYP/Mask_RCNN-Occlusion"
 # Path to trained weights file
 COCO_MODEL_PATH = os.path.join(ROOT_DIR, "mask_rcnn_coco.h5")
 
@@ -36,16 +37,16 @@ DEFAULT_LOGS_DIR = os.path.join(ROOT_DIR, "logs")
 ############################################################
 
 class OcclusionConfig(Config):
-    """Configuration for training on the occlusion_depreciated dataset.
+    """Configuration for training on the occlusion dataset.
     Derives from the base Config class and overrides some values.
     """
     # Give the configuration a recognizable name
-    NAME = "occlusion_depreciated"
+    NAME = "occlusion"
 
     IMAGES_PER_GPU = 2
 
     # Number of classes (including background)
-    NUM_CLASSES = 1 + 13
+    NUM_CLASSES = 1 + 5
 
     # Number of training steps per epoch
     STEPS_PER_EPOCH = 1000
@@ -86,12 +87,12 @@ class OcclusionDataset(utils.Dataset):
 
         # Add classes
         for i in class_ids:
-            self.add_class("occlusion_depreciated", i, occlusion.loadCats(i)[0]["name"])
+            self.add_class("occlusion", i, occlusion.loadCats(i)[0]["name"])
 
         # Add images
         for i in image_ids:
             self.add_image(
-                "occlusion_depreciated", image_id=i,
+                "occlusion", image_id=i,
                 path=os.path.join(image_dir, occlusion.imgs[i]['file_name']),
                 width=occlusion.imgs[i]["width"],
                 height=occlusion.imgs[i]["height"],
@@ -103,7 +104,7 @@ class OcclusionDataset(utils.Dataset):
 
     def load_mask(self, image_id, mask_format='polygon'):
         image_info = self.image_info[image_id]
-        if image_info["source"] != "occlusion_depreciated":
+        if image_info["source"] != "occlusion":
             return super(OcclusionDataset, self).load_mask(image_id)
 
         instance_masks = []
@@ -113,7 +114,7 @@ class OcclusionDataset(utils.Dataset):
         # of class IDs that correspond to each channel of the mask.
         for annotation in annotations:
             class_id = self.map_source_class_id(
-                "occlusion_depreciated.{}".format(annotation['category_id']))
+                "occlusion.{}".format(annotation['category_id']))
             if class_id:
                 if mask_format == 'polygon':
                     m = self.annToMask(annotation, image_info["height"],
@@ -146,7 +147,7 @@ class OcclusionDataset(utils.Dataset):
 
     def image_reference(self, image_id):
         info = self.image_info[image_id]
-        if info["source"] == "occlusion_depreciated":
+        if info["source"] == "occlusion":
             return info['id']
         else:
             super(OcclusionDataset, self).image_reference(image_id)
@@ -192,7 +193,7 @@ if __name__ == '__main__':
 
     # Parse command line arguments
     parser = argparse.ArgumentParser(
-        description='Train Mask R-CNN on MS COCO.')
+        description='Train Mask R-CNN on Occlusion dataset.')
     parser.add_argument("command",
                         metavar="<command>",
                         help="'train' or 'evaluate'")
@@ -214,11 +215,16 @@ if __name__ == '__main__':
                         default=500,
                         metavar="<image count>",
                         help='Images to use for evaluation (default=500)')
+    parser.add_argument('--info', required=False,
+                        default=None,
+                        metavar="training information",
+                        help='training information')
     args = parser.parse_args()
     print("Command: ", args.command)
     print("Model: ", args.model)
     print("Dataset: ", args.dataset)
     print("Logs: ", args.logs)
+    print("Info: ", args.info)
 
     # Configurations
     if args.command == "train":
@@ -293,30 +299,38 @@ if __name__ == '__main__':
         # *** This training schedule is an example. Update to your needs ***
 
         # Training - Stage 1
-        print("Training network heads")
+        print("Training Stage 1")
         model.train(dataset_train, dataset_val,
                     learning_rate=config.LEARNING_RATE,
-                    epochs=60,
-                    layers='heads',
-                    augmentation=augmentation)
+                    epochs=15,
+                    layers='all',
+                    augmentation=augmentation,
+                    info=args.info)
+        # model.train(dataset_train, dataset_val,
+        #             learning_rate=config.LEARNING_RATE,
+        #             epochs=2,
+        #             layers='all',
+        #             augmentation=augmentation,
+        #             info=args.info)
 
         # Training - Stage 2
-        # Finetune layers from ResNet stage 4 and up
-        print("Fine tune Resnet stage 4 and up")
+        print("Training Stage 2")
         model.train(dataset_train, dataset_val,
-                    learning_rate=config.LEARNING_RATE,
-                    epochs=80,
-                    layers='4+',
-                    augmentation=augmentation)
+                    learning_rate=config.LEARNING_RATE / 10,
+                    epochs=21,
+                    layers='all',
+                    augmentation=augmentation,
+                    info=args.info)
 
         # Training - Stage 3
         # Fine tune all layers
-        print("Fine tune all layers")
+        print("Training Stage 3")
         model.train(dataset_train, dataset_val,
-                    learning_rate=config.LEARNING_RATE / 10,
-                    epochs=120,
+                    learning_rate=config.LEARNING_RATE / 100,
+                    epochs=24,
                     layers='all',
-                    augmentation=augmentation)
+                    augmentation=augmentation,
+                    info=args.info)
 
     elif args.command == "evaluate":
         # Validation dataset

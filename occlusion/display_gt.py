@@ -37,21 +37,18 @@ for i in range(len(dataset.image_info)):
 
 matplotlib.use('tkagg')
 # n = 1
-image_ids = np.random.choice(dataset.image_ids, 5)
+image_ids = np.random.choice(dataset.image_ids, 1)
 # image_ids = [target_idx]
 for image_id in image_ids:
     # ======================== Load image ==================================
     # image_id = random.choice(dataset.image_ids)
     image = dataset.load_image(image_id)
-
-    # for image_id in image_ids:
-    images = dataset.load_image(image_id)
     # visualize.display_images([images], cols=1)
 
 
     # ========================= Display images and masks ===================
-    # mask, class_ids = dataset.load_mask(image_id)
-    # visualize.display_top_masks(image, mask, class_ids, dataset.class_names)
+    mask, class_ids = dataset.load_mask(image_id)
+    visualize.display_top_masks(image, mask, class_ids, dataset.class_names)
     # plt.figure()
     # plt.title('manual_mask')
     # plt.axis('off')

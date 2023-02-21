@@ -8,6 +8,7 @@
 import os
 import json
 import numpy as np
+import random
 
 from pycocotools import mask
 from pycococreatortools.pycococreatortools import resize_binary_mask
@@ -141,39 +142,59 @@ def add_image_to_list(main_dict, file_name, anno_id):
 
 
 def write_to_json(write=False):
-    train_dict = {'images': [], 'annotations': [],
-                  'categories': cateogories}
+    train_dict = {'images': [], 'annotations': [], 'categories': cateogories}
     val_dict = {'images': [], 'annotations': [], 'categories': cateogories}
+    test_dict = {'images': [], 'annotations': [], 'categories': cateogories}
 
-    train_val_ratio = 4  # train:val ~= 20:1
-    anno_id_val = 1
     anno_id_train = 1
+    anno_id_val = 1
+    anno_id_test = 1
+    random.seed(101)
 
     for par_name in os.listdir(annos_dir):
         print('extracting images from: {}...'.format(par_name))
         images = os.listdir(os.path.join(annos_dir, par_name))
+        num_images = len(images)
+        random.shuffle(images)
 
-        for image in images[:len(images) // train_val_ratio]:
+        num_train = int(num_images * 0.7)
+        num_val = int(num_images * 0.2)
+        num_test = num_images - num_train - num_val
+
+        for image in images[:num_val]:
             image_id = par_name + '/' + image
             file_name = image_id.replace('json', 'JPEG')
             anno_id_val = add_image_to_list(val_dict, file_name, anno_id_val)
 
-        for image in images[len(images) // train_val_ratio:]:
+        for image in images[num_val:num_val + num_train]:
             image_id = par_name + '/' + image
             file_name = image_id.replace('json', 'JPEG')
-            anno_id_train = add_image_to_list(train_dict, file_name, anno_id_train)
+            anno_id_train = add_image_to_list(train_dict, file_name,
+                                              anno_id_train)
+
+        for image in images[num_val + num_train:]:
+            image_id = par_name + '/' + image
+            file_name = image_id.replace('json', 'JPEG')
+            anno_id_test = add_image_to_list(test_dict, file_name, anno_id_test)
 
         if write:
             target_path_train = os.path.join(dataset_dir, 'jsons_my_annos',
                                              "occlusion_train.json")
             target_path_val = os.path.join(dataset_dir, 'jsons_my_annos',
                                            "occlusion_val.json")
+            target_path_test = os.path.join(dataset_dir, 'jsons_my_annos',
+                                           "occlusion_test.json")
 
             with open(target_path_train, "w") as outfile:
                 json.dump(train_dict, outfile)
             with open(target_path_val, "w") as outfile:
                 json.dump(val_dict, outfile)
+            with open(target_path_test, "w") as outfile:
+                json.dump(test_dict, outfile)
+
+
+    return train_dict, val_dict, test_dict
 
 
 if __name__ == '__main__':
-    write_to_json(write=True)
+    train_dict, val_dict, test_dict = write_to_json(write=True)
