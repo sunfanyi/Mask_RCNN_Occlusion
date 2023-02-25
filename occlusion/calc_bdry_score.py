@@ -61,7 +61,7 @@ for i in range(len(dataset.image_info)):
         target_idx = i
         break
 image_id = target_idx
-image_id = np.random.choice(dataset.image_ids, 1)[0]
+# image_id = np.random.choice(dataset.image_ids, 1)[0]
 
 image, image_meta, gt_class_id, gt_bbox, gt_mask = \
     modellib.load_image_gt(dataset, config, image_id, use_mini_mask=False)
@@ -71,10 +71,6 @@ print("image ID: {}.{} ({}) {}".format(info["source"], info["id"], image_id,
 visualize.display_instances(image, gt_bbox, gt_mask, gt_class_id,
                             dataset.class_names, title="GT")
 
-ax = get_ax(1)
-
-ax.imshow(image)
-
 mask = gt_mask
 # Mask Polygon
 # Pad to ensure proper polygons for masks that touch image edges.
@@ -82,65 +78,72 @@ padded_mask = np.zeros(
     (mask.shape[0] + 2, mask.shape[1] + 2, mask.shape[2]), dtype=np.uint8)
 padded_mask[1:-1, 1:-1, :] = mask
 
+ax = get_ax(1)
+ax.imshow(image)
 contours_flat = []  # 2n x 1
 contours_xy = []  # n x 2
 
 for i in range(mask.shape[2]):  # for each segmentation
     contour = find_contours(padded_mask[:, :, i], 0.5)
-    # contour_xy = [i[::10].tolist() for i in contour_xy]
-    contour_xy = []
+    xy = []  # multiple verts (in xy)
+    flat = []  # multiple verts (in flat)
     i = 0
     for verts in contour:
         # Subtract the padding and flip (y, x) to (x, y)
         verts = np.fliplr(verts) - 1
-        verts = verts[::10].tolist()
-        # contour_xy.append(verts)  # todo
-        p = Polygon(verts, facecolor="none", linewidth=2, edgecolor='r')
+        verts = verts[::10].tolist()  # make points less dense
+        xy.append(verts)
+        # flatten the 2D list
+        flat.append([item for sublist in verts for item in sublist])
+        # p = Polygon(verts, facecolor="none", linewidth=2, edgecolor='r')
         # ax.add_patch(p)
-        i += 1
-        if i == 1:
-            xs, ys = zip(*verts)
-            ax.scatter(xs, ys, c='r', s=1)
+        xs, ys = zip(*verts)
+        ax.scatter(xs, ys, c='r', s=1)
 
-    contour_xy = verts  # todo
-    contours_xy.append(contour_xy)
+    contours_xy.append(xy)
+    contours_flat.append(flat)
 
-    # flatten the 2D list
-    contour_flat = [[item for sublist in contour_xy for item in sublist]]
-    contours_flat.append(contour_flat)
-
-
-    # contour = [binary_mask_to_polygon(padded_mask[:, :, i], tolerance=2)[2]]
-    # contours.append(contour)
-    #
-    # contour_xy = np.array(contour).reshape(-1, 2).tolist()
-    # contours_xy.append(contour_xy)
-
-    # xs, ys = zip(*contour_xy)
-    # ax.scatter(xs, ys, c='r')
 plt.show()
 
 
-#
-# contours_flat2 = []  # 2n x 1
-# contours_xy2 = []  # n x 2
-#
-# for i in range(mask.shape[2]):
-#     contour_flat2 = binary_mask_to_polygon(padded_mask[:, :, i], tolerance=2)
-#     contour_flat2 = np.array(contour_flat2) - 1
-#     contours_flat2.append(contour_flat2.tolist())
-#
-#     contour_xy2 = np.array(contour_flat2).reshape(-1, 2).tolist()
-#     contours_xy2.append(contour_xy2)
-#
-#     xs, ys = zip(*contour_xy2)
-#     ax.scatter(xs, ys, c='r')
-# plt.show()
+ax = get_ax(1)
+ax.imshow(image)
+contours_flat2 = []  # 2n x 1
+contours_xy2 = []  # n x 2
+
+for i in range(mask.shape[2]):
+    flat2 = binary_mask_to_polygon(padded_mask[:, :, i], tolerance=2)
+    flat2 = [[x - 1 for x in sublist] for sublist in flat2]
+    contours_flat2.append(flat2)
+    xy = []
+    for verts in flat2:
+        verts = np.array(verts).reshape(-1, 2).tolist()
+        xy.append(verts)
+        xs, ys = zip(*verts)
+        ax.scatter(xs, ys, c='r')
+    contours_xy2.append(xy)
+
+plt.show()
+
 
 mask = []
 for i in range(len(contours_xy)):
-    binary_mask = annToMask(contours_flat[i], image.shape[0], image.shape[1])
+    seg = contours_flat[i]
+    if len(seg) == 1:
+        binary_mask = annToMask(seg, image.shape[0], image.shape[1])
+    else:  # the mask contains 'holes' overlayyed in the middle
+        outer_edge_poly = seg[0]
+        mask_outer = annToMask([outer_edge_poly], image.shape[0], image.shape[1])
+        inner_edge_poly = seg[1:]  # holes to be subtracted
+        masks_inner = []
+        for inner in inner_edge_poly:
+            masks_inner.append(annToMask([inner], image.shape[0], image.shape[1]))
+        # find their union
+        union_inner = np.logical_or.reduce(masks_inner)
+        # subtract the inner masks
+        binary_mask = np.logical_and(mask_outer, np.logical_not(union_inner))
     mask.append(binary_mask)
+
 mask = np.transpose(mask, (1, 2, 0))
 _, class_ids = dataset.load_mask(image_id)
 # Compute Bounding box
