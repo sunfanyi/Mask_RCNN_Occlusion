@@ -91,8 +91,8 @@ for i in range(mask.shape[2]):  # for each segmentation
     for verts in contour:
         # Subtract the padding and flip (y, x) to (x, y)
         verts = np.fliplr(verts) - 1
-        verts = verts[::10].tolist()  # make points less dense
-        xy.append(verts)
+        # verts = verts[::10]  # make points less dense
+        xy.append(verts.tolist())
         # flatten the 2D list
         flat.append([item for sublist in verts for item in sublist])
         # p = Polygon(verts, facecolor="none", linewidth=2, edgecolor='r')
@@ -106,30 +106,31 @@ for i in range(mask.shape[2]):  # for each segmentation
 plt.show()
 
 
-ax = get_ax(1)
-ax.imshow(image)
-contours_flat2 = []  # 2n x 1
-contours_xy2 = []  # n x 2
+# ax = get_ax(1)
+# ax.imshow(image)
+# contours_flat2 = []  # 2n x 1
+# contours_xy2 = []  # n x 2
+#
+# for i in range(mask.shape[2]):
+#     flat2 = binary_mask_to_polygon(padded_mask[:, :, i], tolerance=2)
+#     flat2 = [[x - 1 for x in sublist] for sublist in flat2]
+#     contours_flat2.append(flat2)
+#     xy = []
+#     for verts in flat2:
+#         verts = np.array(verts).reshape(-1, 2).tolist()
+#         xy.append(verts)
+#         xs, ys = zip(*verts)
+#         ax.scatter(xs, ys, c='r')
+#     contours_xy2.append(xy)
+#
+# plt.show()
 
-for i in range(mask.shape[2]):
-    flat2 = binary_mask_to_polygon(padded_mask[:, :, i], tolerance=2)
-    flat2 = [[x - 1 for x in sublist] for sublist in flat2]
-    contours_flat2.append(flat2)
-    xy = []
-    for verts in flat2:
-        verts = np.array(verts).reshape(-1, 2).tolist()
-        xy.append(verts)
-        xs, ys = zip(*verts)
-        ax.scatter(xs, ys, c='r')
-    contours_xy2.append(xy)
 
-plt.show()
-
-
+# convert back to binary to check if any loss in accuracy
 mask = []
-for i in range(len(contours_xy)):
+for i in range(len(contours_xy)):  # for each annotation
     seg = contours_flat[i]
-    if len(seg) == 1:
+    if len(seg) == 1:  # simple case
         binary_mask = annToMask(seg, image.shape[0], image.shape[1])
     else:  # the mask contains 'holes' overlayyed in the middle
         outer_edge_poly = seg[0]
@@ -144,7 +145,7 @@ for i in range(len(contours_xy)):
         binary_mask = np.logical_and(mask_outer, np.logical_not(union_inner))
     mask.append(binary_mask)
 
-mask = np.transpose(mask, (1, 2, 0))
+mask = np.transpose(mask, (1, 2, 0))  # 2 x height x width to height x width x 2
 _, class_ids = dataset.load_mask(image_id)
 # Compute Bounding box
 bbox = utils.extract_bboxes(mask)

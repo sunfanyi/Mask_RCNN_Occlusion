@@ -13,7 +13,8 @@ import imgaug
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 from pycocotools.coco import COCO
 from pycocotools import mask as maskUtils
-
+from utils_occlusion import annToMask, annToRLE
+from skimage.measure import find_contours
 # Root directory of the project
 ROOT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
@@ -117,10 +118,60 @@ class OcclusionDataset(utils.Dataset):
                 "occlusion.{}".format(annotation['category_id']))
             if class_id:
                 if mask_format == 'polygon':
-                    m = self.annToMask(annotation, image_info["height"],
-                                       image_info["width"])
+                    seg = annotation['segmentation']
+                    m = annToMask(seg, image_info["height"], image_info["width"])
+                    #
+                    # mask = m
+                    # padded_mask = np.zeros(
+                    #     (mask.shape[0] + 2, mask.shape[1] + 2),
+                    #     dtype=np.uint8)
+                    # padded_mask[1:-1, 1:-1] = mask
+                    #
+                    # # contours_flat = []  # 2n x 1
+                    # # contours_xy = []  # n x 2
+                    #
+                    # contour = find_contours(padded_mask, 0.5)
+                    # xy = []  # multiple verts (in xy)
+                    # flat = []  # multiple verts (in flat)
+                    # i = 0
+                    # for verts in contour:
+                    #     # Subtract the padding and flip (y, x) to (x, y)
+                    #     verts = np.fliplr(verts) - 1
+                    #     # verts = verts[::10]  # make points less dense
+                    #     xy.append(verts.tolist())
+                    #     # flatten the 2D list
+                    #     flat.append(
+                    #         [item for sublist in verts for item in sublist])
+                    #
+                    # contours_xy = xy
+                    # contours_flat = flat
+                    #
+                    # seg = contours_flat
+                    # if len(seg) == 1:
+                    #     binary_mask = annToMask(seg, image_info["height"], image_info["width"])
+                    # else:  # the mask contains 'holes' overlayyed in the middle
+                    #     # binary_mask = annToMask(seg, image_info["height"], image_info["width"])
+                    #     outer_edge_poly = seg[0]
+                    #     mask_outer = annToMask([outer_edge_poly],
+                    #                            image_info["height"], image_info["width"])
+                    #     inner_edge_poly = seg[1:]  # holes to be subtracted
+                    #     masks_inner = []
+                    #     for inner in inner_edge_poly:
+                    #         masks_inner.append(
+                    #             annToMask([inner], image_info["height"], image_info["width"]))
+                    #     # find their union
+                    #     union_inner = np.logical_or.reduce(masks_inner)
+                    #     # subtract the inner masks
+                    #     binary_mask = np.logical_and(mask_outer,
+                    #                                  np.logical_not(
+                    #                                      union_inner))
+                    # mask = binary_mask
+                    #
+                    # # m = np.transpose(mask, (1, 2, 0))
+                    # m = mask
+
                 elif mask_format == 'bitmap':
-                    m = np.array(annotation['segmentation'])
+                    m = np.array(seg)
                 # Some objects are so small that they're less than 1 pixel area
                 # and end up rounded out. Skip those objects.
                 if m.max() < 1:
@@ -151,36 +202,6 @@ class OcclusionDataset(utils.Dataset):
             return info['id']
         else:
             super(OcclusionDataset, self).image_reference(image_id)
-
-
-    def annToRLE(self, ann, height, width):
-        """
-        Convert annotation which can be polygons, uncompressed RLE to RLE.
-        :return: binary mask (numpy 2D array)
-        """
-        segm = ann['segmentation']
-        if isinstance(segm, list):
-            # polygon -- a single object might consist of multiple parts
-            # we merge all parts into one mask rle code
-            rles = maskUtils.frPyObjects(segm, height, width)
-            rle = maskUtils.merge(rles)
-        elif isinstance(segm['counts'], list):
-            # uncompressed RLE
-            rle = maskUtils.frPyObjects(segm, height, width)
-        else:
-            # rle
-            rle = ann['segmentation']
-        return rle
-
-
-    def annToMask(self, ann, height, width):
-        """
-        Convert annotation which can be polygons, uncompressed RLE, or RLE to binary mask.
-        :return: binary mask (numpy 2D array)
-        """
-        rle = self.annToRLE(ann, height, width)
-        m = maskUtils.decode(rle)
-        return m
 
 
 ############################################################

@@ -1006,82 +1006,6 @@ def build_fpn_mask_graph(rois, feature_maps, image_meta,
     return x
 
 
-def build_mask_bdry_graph(rois, feature_maps, image_meta, mask,
-                          pool_size, mask_pool_size, num_classes,
-                          train_bn=True,
-                          fc_layers_size=1024):
-    """Builds the computation graph of the mask boundary head of Feature Pyramid Network.
-    concat all mask and rois
-
-    rois: [batch, num_rois, (y1, x1, y2, x2)] Proposal boxes in normalized
-          coordinates.
-    feature_maps: List of feature maps from different layers of the pyramid,
-                  [P2, P3, P4, P5]. Each has a different resolution.
-    mask: [batch, num_rois, MASK_POOL_SIZE, MASK_POOL_SIZE, NUM_CLASSES]
-    image_meta: [batch, (meta data)] Image details. See compose_image_meta()
-    pool_size: The width of the square feature map generated from ROI Pooling.
-    num_classes: number of classes, which determines the depth of the results
-    train_bn: Boolean. Train or freeze Batch Norm layers
-
-    Returns: Mask_bdry [batch, num_rois, num_classes]
-    """
-    # ROI Pooling
-    # Shape: [batch, num_rois, MASK_POOL_SIZE, MASK_POOL_SIZE, channels]
-    r = PyramidROIAlign([mask_pool_size, mask_pool_size],
-                        name="roi_align_bdry")(
-        [rois, image_meta] + feature_maps)
-    # Conv layers
-    m = KL.TimeDistributed(
-        KL.MaxPool2D(pool_size=(2, 2), strides=None, padding='valid'))(mask)
-    x = KL.Concatenate(axis=-1)([r, m])
-    x = KL.TimeDistributed(KL.Conv2D(256, (3, 3), padding="same"),
-                           name="mrcnn_bdry_conv1")(x)
-    x = KL.TimeDistributed(BatchNorm(),
-                           name='mrcnn_bdry_bn1')(x, training=train_bn)
-    x = KL.Activation('relu')(x)
-
-    x = KL.TimeDistributed(KL.Conv2D(256, (3, 3), padding="same"),
-                           name="mrcnn_bdry_conv2")(x)
-    x = KL.TimeDistributed(BatchNorm(),
-                           name='mrcnn_bdry_bn2')(x, training=train_bn)
-    x = KL.Activation('relu')(x)
-
-    x = KL.TimeDistributed(KL.Conv2D(256, (3, 3), padding="same"),
-                           name="mrcnn_bdry_conv3")(x)
-    x = KL.TimeDistributed(BatchNorm(),
-                           name='mrcnn_bdry_bn3')(x, training=train_bn)
-    x = KL.Activation('relu')(x)
-
-    # Pool layers
-    x = KL.TimeDistributed(
-        KL.MaxPool2D(pool_size=(2, 2), strides=None, padding='valid',
-                     data_format=None))(x)
-
-    # Two 1024 FC layers (implemented with Conv2D for consistency)
-    x = KL.TimeDistributed(
-        KL.Conv2D(fc_layers_size, (pool_size, pool_size), padding="valid"),
-        name="mrcnn_bdry_conv4")(x)
-    x = KL.TimeDistributed(BatchNorm(), name='mrcnn_bdry_bn4')(x,
-                                                               training=train_bn)
-    x = KL.Activation('relu')(x)
-    x = KL.TimeDistributed(KL.Conv2D(fc_layers_size, (1, 1)),
-                           name="mrcnn_bdry_conv5")(x)
-    x = KL.TimeDistributed(BatchNorm(), name='mrcnn_bdry_bn5')(x,
-                                                               training=train_bn)
-    x = KL.Activation('relu')(x)
-
-    # shared = KL.Lambda(lambda x: K.squeeze(K.squeeze(x, 3), 2),
-    #                 name="pool_bdry_squeeze")(x)
-    # Mask bdry head
-    # s = KL.TimeDistributed(KL.Dense(units = num_classes, activation='softmax'))(shared)
-    s = KL.TimeDistributed(KL.Conv2D(filters=num_classes, kernel_size=(1, 1),
-                                     activation='softmax'))(x)
-    mrcnn_mask_bdry = s
-
-    mrcnn_mask_bdry = tf.convert_to_tensor(mrcnn_mask_bdry)
-    return mrcnn_mask_bdry
-
-
 ############################################################
 #  Loss Functions
 ############################################################
@@ -2082,15 +2006,6 @@ class MaskRCNN():
                                               config.NUM_CLASSES,
                                               train_bn=config.TRAIN_BN)
             print(mrcnn_mask)
-            mrcnn_mask_bdry = build_mask_bdry_graph(rois, mrcnn_feature_maps,
-                                                    input_image_meta,
-                                                    mrcnn_mask,
-                                                    config.POOL_SIZE,
-                                                    config.MASK_POOL_SIZE,
-                                                    config.NUM_CLASSES,
-                                                    train_bn=config.TRAIN_BN,
-                                                    fc_layers_size=config.FPN_CLASSIF_FC_LAYERS_SIZE)
-
             # TODO: clean up (use tf.identify if necessary)
             output_rois = KL.Lambda(lambda x: x * 1, name="output_rois")(rois)
 
@@ -2112,7 +2027,7 @@ class MaskRCNN():
             if not config.USE_RPN_ROIS:
                 inputs.append(input_rois)
             outputs = [rpn_class_logits, rpn_class, rpn_bbox,
-                       mrcnn_class_logits, mrcnn_class, mrcnn_bbox, mrcnn_mask, mrcnn_mask_bdry,
+                       mrcnn_class_logits, mrcnn_class, mrcnn_bbox, mrcnn_mask,
                        rpn_rois, output_rois,
                        rpn_class_loss, rpn_bbox_loss, class_loss, bbox_loss, mask_loss]
             model = KM.Model(inputs, outputs, name='mask_rcnn')

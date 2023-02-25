@@ -26,10 +26,10 @@ import occlusion
 dataset_dir = '../../datasets/dataset_occluded'
 
 dataset = occlusion.OcclusionDataset()
-occlusion = dataset.load_occlusion(dataset_dir, "train", return_occlusion=True)
+occlusion = dataset.load_occlusion(dataset_dir, "test", return_occlusion=True)
 dataset.prepare()
 
-target_id = "trainFGL1_BGL1/n02917067_4058"
+target_id = "aeroplaneFGL1_BGL1/n02690373_3378"
 for i in range(len(dataset.image_info)):
     if dataset.image_info[i]['id'] == target_id:
         target_idx = i
@@ -37,9 +37,10 @@ for i in range(len(dataset.image_info)):
 
 matplotlib.use('tkagg')
 # n = 1
-image_ids = np.random.choice(dataset.image_ids, 1)
-# image_ids = [target_idx]
+image_ids = [target_idx]
+# image_ids = np.random.choice(dataset.image_ids, 1)
 for image_id in image_ids:
+    info = dataset.image_info[image_id]
     # ======================== Load image ==================================
     # image_id = random.choice(dataset.image_ids)
     image = dataset.load_image(image_id)
