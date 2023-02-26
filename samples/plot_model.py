@@ -16,6 +16,10 @@ sys.path.append(ROOT_DIR)  # To find local version of the library
 from mrcnn import utils
 import mrcnn.model as modellib
 from mrcnn import visualize
+
+# Import Occlusion config
+sys.path.append(os.path.join(ROOT_DIR, "occlusion/"))
+from occlusion import occlusion
 # Import COCO config
 sys.path.append(os.path.join(ROOT_DIR, "samples/coco/"))
 import coco
@@ -41,8 +45,11 @@ IMAGE_DIR = os.path.join(ROOT_DIR, "images")
 #     GPU_COUNT = 1
 #     IMAGES_PER_GPU = 1
 
+config = occlusion.OcclusionConfig()
 # config = coco.CocoConfig()
-config = shapes.ShapesConfig()
+# config = shapes.ShapesConfig()
+
+
 # config.display()
 
 # Create model object in inference mode.
@@ -55,7 +62,7 @@ model = modellib.MaskRCNN(mode="training", model_dir=MODEL_DIR, config=config)
 # Generate the plot
 from tensorflow.keras.utils import plot_model
 
-plot_model(model.keras_model, to_file='model_plot_shapes.png',
+plot_model(model.keras_model, to_file='model_plot_occlusion.png',
            show_shapes=True,
            show_layer_names=True)
 

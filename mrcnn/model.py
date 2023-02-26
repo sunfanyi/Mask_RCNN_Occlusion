@@ -1006,10 +1006,10 @@ def build_fpn_mask_graph(rois, feature_maps, image_meta,
     return x
 
 
-def build_mask_bdry_graph(rois, feature_maps, image_meta, mask,
-                          pool_size, mask_pool_size, num_classes,
-                          train_bn=True,
-                          fc_layers_size=1024):
+def build_bdry_score_graph(rois, feature_maps, image_meta, mask,
+                           pool_size, mask_pool_size, num_classes,
+                           train_bn=True,
+                           fc_layers_size=1024):
     """Builds the computation graph of the mask boundary head of Feature Pyramid Network.
     concat all mask and rois
 
@@ -1076,10 +1076,10 @@ def build_mask_bdry_graph(rois, feature_maps, image_meta, mask,
     # s = KL.TimeDistributed(KL.Dense(units = num_classes, activation='softmax'))(shared)
     s = KL.TimeDistributed(KL.Conv2D(filters=num_classes, kernel_size=(1, 1),
                                      activation='softmax'))(x)
-    mrcnn_mask_bdry = s
+    mrcnn_bdry_score = s
 
-    mrcnn_mask_bdry = tf.convert_to_tensor(mrcnn_mask_bdry)
-    return mrcnn_mask_bdry
+    mrcnn_bdry_score = tf.convert_to_tensor(mrcnn_bdry_score)
+    return mrcnn_bdry_score
 
 
 ############################################################
@@ -1251,6 +1251,70 @@ def mrcnn_mask_loss_graph(target_masks, target_class_ids, pred_masks):
     # shape: [batch, roi, num_classes]
     loss = K.switch(tf.size(y_true) > 0,
                     K.binary_crossentropy(target=y_true, output=y_pred),
+                    tf.constant(0.0))
+    loss = K.mean(loss)
+    return loss
+
+
+def mrcnn_bdry_score_loss_graph(target_masks, target_class_ids, pred_masks,
+                                pred_bdry_score, smooth=0.000001):
+    """Mask l2 loss for the boundary head.
+
+    target_masks: [batch, num_rois, height, width].
+        A float32 tensor of values 0 or 1. Uses zero padding to fill array.
+    target_class_ids: [batch, num_rois]. Integer class IDs. Zero padded.
+    pred_masks: [batch, proposals, height, width, num_classes] float32 tensor
+                with values from 0 to 1.
+    pred_mask_iou: [batch, num_rois, 1, 1, num_classes] float32 tensor
+                with values from 0 to 1,
+                dim[2, 3] = [1, 1] caused by covd at the final of the scoring graph, must use squeeze.
+    """
+    # Reshape for simplicity. Merge first two dimensions into one.
+    target_class_ids = K.reshape(target_class_ids, (-1,))  # [N]
+    mask_shape = tf.shape(target_masks)
+    target_masks = K.reshape(target_masks,
+                    (-1, mask_shape[2], mask_shape[3]))  # [N, height, width]
+    pred_shape = tf.shape(pred_masks)
+    pred_masks = K.reshape(pred_masks,
+                           (-1, pred_shape[2], pred_shape[3],
+                            pred_shape[4]))  # [N, height, width, num_classes]
+    pred_bdry_score = tf.squeeze(pred_bdry_score, axis=[2, 3])
+    pred_bdry_shape = tf.shape(pred_bdry_score)
+    pred_bdry_score = K.reshape(pred_bdry_score,
+                              (-1, pred_bdry_shape[2]))  # [N, num_classes]
+    # Permute predicted masks to [N, num_classes, height, width]
+    pred_masks = tf.transpose(pred_masks,
+                              [0, 3, 1, 2])  # [N, num_classes, height, width]
+
+    # Only positive ROIs contribute to the loss. And only
+    # the class specific mask of each ROI.
+    positive_ix = tf.where(target_class_ids > 0)[:, 0]
+    positive_class_ids = tf.cast(
+        tf.gather(target_class_ids, positive_ix), tf.int64)
+    indices = tf.stack([positive_ix, positive_class_ids], axis=1)
+
+    # Gather the masks (predicted and true) that contribute to loss
+    mask_true = tf.gather(target_masks, positive_ix)  # [N, h, w]
+    mask_pred = tf.gather_nd(pred_masks, indices)  # [N, h, w]
+    mask_true = tf.cast(mask_true, tf.bool)
+    mask_pred = tf.cast(tf.where(
+        tf.less(mask_pred, tf.zeros_like(mask_pred) + 0.5),
+        tf.zeros_like(mask_pred),
+        tf.ones_like(mask_pred)
+    ), tf.bool)
+
+    # Do the same for the bdry_score
+    pred_bdry_score = tf.gather_nd(pred_bdry_score, indices)
+
+    # gt_bdry_score = calc_bdry_score(mask_pred, mask_true)  # todo
+
+    gt_bdry_score = pred_bdry_score
+
+    y_true = K.reshape(gt_bdry_score, (-1,))
+    y_pred = K.reshape(pred_bdry_score, (-1,))
+
+    loss = K.switch(tf.size(y_true) > 0,
+                    smooth_l1_loss(y_true, y_pred),
                     tf.constant(0.0))
     loss = K.mean(loss)
     return loss
@@ -2081,15 +2145,15 @@ class MaskRCNN():
                                               config.MASK_POOL_SIZE,
                                               config.NUM_CLASSES,
                                               train_bn=config.TRAIN_BN)
-            print(mrcnn_mask)
-            mrcnn_mask_bdry = build_mask_bdry_graph(rois, mrcnn_feature_maps,
-                                                    input_image_meta,
-                                                    mrcnn_mask,
-                                                    config.POOL_SIZE,
-                                                    config.MASK_POOL_SIZE,
-                                                    config.NUM_CLASSES,
-                                                    train_bn=config.TRAIN_BN,
-                                                    fc_layers_size=config.FPN_CLASSIF_FC_LAYERS_SIZE)
+            print(mrcnn_mask, '-> predicted_mask')
+            mrcnn_bdry_score = build_bdry_score_graph(rois, mrcnn_feature_maps,
+                                                      input_image_meta,
+                                                      mrcnn_mask,
+                                                      config.POOL_SIZE,
+                                                      config.MASK_POOL_SIZE,
+                                                      config.NUM_CLASSES,
+                                                      train_bn=config.TRAIN_BN,
+                                                      fc_layers_size=config.FPN_CLASSIF_FC_LAYERS_SIZE)
 
             # TODO: clean up (use tf.identify if necessary)
             output_rois = KL.Lambda(lambda x: x * 1, name="output_rois")(rois)
@@ -2105,6 +2169,8 @@ class MaskRCNN():
                 [target_bbox, target_class_ids, mrcnn_bbox])
             mask_loss = KL.Lambda(lambda x: mrcnn_mask_loss_graph(*x), name="mrcnn_mask_loss")(
                 [target_mask, target_class_ids, mrcnn_mask])
+            bdry_score_loss = KL.Lambda(lambda x: mrcnn_bdry_score_loss_graph(*x), name="mrcnn_mask_bdry_loss")(
+                [target_mask, target_class_ids, mrcnn_mask, mrcnn_bdry_score])
 
             # Model
             inputs = [input_image, input_image_meta,
@@ -2112,9 +2178,9 @@ class MaskRCNN():
             if not config.USE_RPN_ROIS:
                 inputs.append(input_rois)
             outputs = [rpn_class_logits, rpn_class, rpn_bbox,
-                       mrcnn_class_logits, mrcnn_class, mrcnn_bbox, mrcnn_mask, mrcnn_mask_bdry,
+                       mrcnn_class_logits, mrcnn_class, mrcnn_bbox, mrcnn_mask, mrcnn_bdry_score,
                        rpn_rois, output_rois,
-                       rpn_class_loss, rpn_bbox_loss, class_loss, bbox_loss, mask_loss]
+                       rpn_class_loss, rpn_bbox_loss, class_loss, bbox_loss, mask_loss, bdry_score_loss]
             model = KM.Model(inputs, outputs, name='mask_rcnn')
         else:
             # Network Heads
