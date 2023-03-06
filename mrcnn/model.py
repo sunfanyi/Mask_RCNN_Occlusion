@@ -1271,6 +1271,7 @@ def mrcnn_bdry_score_loss_graph(target_masks, target_class_ids, pred_masks,
     """
     # Reshape for simplicity. Merge first two dimensions into one.
     target_class_ids = K.reshape(target_class_ids, (-1,))  # [N]
+    print(target_class_ids)
     mask_shape = tf.shape(target_masks)
     target_masks = K.reshape(target_masks,
                     (-1, mask_shape[2], mask_shape[3]))  # [N, height, width]

@@ -33,9 +33,9 @@ COCO_MODEL_PATH = os.path.join(ROOT_DIR, "mask_rcnn_coco.h5")
 DEFAULT_LOGS_DIR = os.path.join(ROOT_DIR, "logstemp")
 
 
-# config = OcclusionConfig()
-# model = modellib.MaskRCNN(mode="training", config=config,
-#                           model_dir=DEFAULT_LOGS_DIR)
+config = OcclusionConfig()
+model = modellib.MaskRCNN(mode="training", config=config,
+                          model_dir=DEFAULT_LOGS_DIR)
 
 def smooth_l1_loss(y_true, y_pred):
     """Implements Smooth-L1 loss.

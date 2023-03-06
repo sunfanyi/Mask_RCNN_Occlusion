@@ -25,6 +25,16 @@ import occlusion
 
 dataset_dir = '../../datasets/dataset_occluded'
 
+dataset_train = occlusion.OcclusionDataset()
+dataset_train.load_occlusion(dataset_dir, "train")
+dataset_train.prepare()
+
+# Validation dataset
+dataset_val = occlusion.OcclusionDataset()
+val_type = "val"
+dataset_val.load_occlusion(dataset_dir, val_type)
+dataset_val.prepare()
+
 dataset = occlusion.OcclusionDataset()
 occlusion = dataset.load_occlusion(dataset_dir, "test", return_occlusion=True)
 dataset.prepare()
