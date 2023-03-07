@@ -22,6 +22,7 @@ from mrcnn.model import log
 # from mrcnn.visualize import display_images, draw_box
 # from mrcnn.utils import minimize_mask, expand_mask
 import occlusion
+matplotlib.use('tkagg')
 
 dataset_dir = '../../datasets/dataset_occluded'
 
@@ -45,7 +46,6 @@ for i in range(len(dataset.image_info)):
         target_idx = i
         break
 
-matplotlib.use('tkagg')
 # n = 1
 image_ids = [target_idx]
 # image_ids = np.random.choice(dataset.image_ids, 1)

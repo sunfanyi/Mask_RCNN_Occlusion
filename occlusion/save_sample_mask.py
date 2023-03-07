@@ -51,9 +51,13 @@ for i in range(len(dataset.image_info)):
         target_idx2 = i
         break
 
-image_index = [target_idx1, target_idx2]
-image_ids = [target_id1, target_id2]
+# image_index = [target_idx1, target_idx2]
+np.random.seed(101)
+image_index = np.random.choice(dataset.image_ids, 10)
+image_ids = [dataset.image_info[image_index[i]]['id']
+             for i in range(len(image_index))]
 images = []
+gt_seg_num = np.ndarray((len(image_ids),), dtype='int')  # number of seg in each image
 
 for i in range(len(image_index)):
     image, image_meta, gt_class_id, gt_bbox, gt_mask = \
@@ -68,11 +72,12 @@ for i in range(len(image_index)):
     for seg, bbox in zip(gt_mask, bboxes):
         anno_info = {'id': image_ids[i],
                      'file_names': image_ids[i] + '.JPEG',
-                     'width': float(info['width']),
-                     'height': float(info['height']),
+                     'width': float(image.shape[1]),
+                     'height': float(image.shape[0]),
                      'mask_true': seg.astype('float').tolist(),
                      'bbox_true': bbox.astype('float').tolist()}
         sample_info.append(anno_info)
+    gt_seg_num[i] = len(gt_mask)
 
 
 # ==================== Get predicted mask ========================
@@ -93,6 +98,9 @@ model.load_weights(weights_path, by_name=True)
 images = np.array(images)
 
 num_seg = 0
+# 0 if images have different numbers of gt and predicted seg, otherwise 1
+# flag_seg_match = np.ndarray((len(sample_info),), dtype=np.bool)
+flag_seg_match = []
 for i in range(len(images)):
     results = model.detect([images[i]], verbose=1)
     r = results[0]
@@ -101,12 +109,24 @@ for i in range(len(images)):
     mask_pred = minimize_mask(bboxes, mask_pred, (56, 56))
 
     mask_pred = np.transpose(mask_pred, (2, 0, 1))
-    for seg, bbox in zip(gt_mask, bboxes):
-        anno_info = {'mask_pred': seg.astype('float').tolist(),
-                     'bbox_pred': bbox.astype('float').tolist()}
-        sample_info[num_seg].update(anno_info)
-        num_seg += 1
+    flag_match = True if len(mask_pred) == gt_seg_num[i] else False
 
+    if flag_match:
+        for seg, bbox in zip(mask_pred, bboxes):
+            anno_info = {'mask_pred': seg.astype('float').tolist(),
+                         'bbox_pred': bbox.astype('float').tolist()}
+            sample_info[num_seg].update(anno_info)
+            num_seg += 1
+        flag_seg_match += [True] * gt_seg_num[i]
+    else:
+        num_seg += gt_seg_num[i]
+        flag_seg_match += [False] * gt_seg_num[i]
+
+
+sample_info_original = sample_info.copy()
+# delete the images with unmatched numbers of gt and predicted mask
+sample_info = [sample_info[i] for i in range(len(flag_seg_match))
+               if flag_seg_match[i]]
 
 with open('sample_mask_info.json', "w") as outfile:
     json.dump(sample_info, outfile)

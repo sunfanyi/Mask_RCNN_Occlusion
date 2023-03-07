@@ -7,7 +7,9 @@
 
 # Tools for this study
 
+import numpy as np
 import matplotlib.pyplot as plt
+from skimage.measure import find_contours
 
 from pycocotools import mask as maskUtils
 
@@ -52,3 +54,56 @@ def annToRLE(ann, height, width):
         rle = ann
     return rle
 
+
+def mask2polygon(mask, ratio=1, concat_verts=False):
+    """
+    :param mask: [ROIs, height, width]
+    :param ratio: point density, = 10 if choose every ten points
+    :param concat_verts: if true, concat the vertices for each segmentation into
+        a single list
+    """
+    # Pad to ensure proper polygons for masks that touch image edges.
+    padded_mask = np.zeros(
+        (mask.shape[0], mask.shape[1] + 2, mask.shape[2] + 2), dtype=np.uint8)
+    padded_mask[:, 1:-1, 1:-1] = mask
+
+    contours_flat = []  # 2n x 1
+    contours_xy = []  # n x 2
+
+    for i in range(mask.shape[0]):  # for each segmentation
+        contour = find_contours(padded_mask[i, :, :], 0.5)
+        xy = []  # multiple verts (in xy)
+        flat = []  # multiple verts (in flat)
+        for verts in contour:
+            # Subtract the padding and flip (y, x) to (x, y)
+            verts = np.fliplr(verts) - 1
+            verts = verts[::ratio]  # make points less dense
+            xy.append(verts.tolist())
+            # flatten the 2D list
+            flat.append([item for sublist in verts for item in sublist])
+
+        contours_xy.append(xy)
+        contours_flat.append(flat)
+    if concat_verts:
+        contours_xy = [sum(i, []) for i in contours_xy]
+        contours_flat = [sum(i, []) for i in contours_flat]
+
+    return contours_xy, contours_flat
+
+
+def calc_bdry_score(polygons_true, polygons_pred):
+    if len(polygons_true) != len(polygons_pred):
+        raise ValueError('Different numbers of segmentations')
+
+    N = len(polygons_true)
+    bdry_score = np.ndarray((N,))
+    for i in range(N):
+        true = np.array(polygons_true[i])
+        pred = np.array(polygons_pred[i])
+        # search for the cloest point
+        diff = pred[:, np.newaxis, :] - true[np.newaxis, :, :]
+        all_dist = np.sqrt(np.sum(diff ** 2, axis=-1))
+        min_dist = np.min(all_dist, axis=1)  # [num_points]
+        bdry_score[i] = np.mean(min_dist)/len(min_dist)
+
+    return bdry_score
