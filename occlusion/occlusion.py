@@ -12,9 +12,8 @@ import imgaug
 
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 from pycocotools.coco import COCO
-from pycocotools import mask as maskUtils
-from utils_occlusion import annToMask, annToRLE
-from skimage.measure import find_contours
+from mrcnn.utils_occlusion import annToMask
+
 # Root directory of the project
 ROOT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 

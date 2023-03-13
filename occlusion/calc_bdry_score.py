@@ -10,16 +10,16 @@ import os
 import sys
 import json
 import numpy as np
-import matplotlib
 import matplotlib.pyplot as plt
 import skimage.io
 
-from utils_occlusion import mask2polygon, calc_bdry_score, get_ax
+
 ROOT_DIR = os.path.abspath("../")
 sys.path.append(ROOT_DIR)  # To find local version of the library
 from mrcnn.utils import expand_mask, resize_image
-from mrcnn import visualize
-matplotlib.use('tkagg')
+from mrcnn.utils_occlusion import mask2polygon, calc_bdry_score
+
+# matplotlib.use('tkagg')
 
 image_dir = '../../datasets/dataset_occluded/images'
 
@@ -111,5 +111,6 @@ for i in range(N):
     axes[1].set_title('Predicted')
     fig.suptitle('bdry_score = %.5f' % bdry_scores[i])
 
-    # if i == 4:  # only show first two
-    #     break
+    fig.show()
+    if i == 4:  # only show first two
+        break

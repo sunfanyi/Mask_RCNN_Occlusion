@@ -24,6 +24,7 @@ import keras.engine as KE
 import keras.models as KM
 
 from mrcnn import utils
+from mrcnn.utils_occlusion import mask2polygon, calc_bdry_score
 
 # Requires TensorFlow 1.3+ and Keras 2.0.8+.
 from distutils.version import LooseVersion
@@ -1307,9 +1308,10 @@ def mrcnn_bdry_score_loss_graph(target_masks, target_class_ids, pred_masks,
     # Do the same for the bdry_score
     pred_bdry_score = tf.gather_nd(pred_bdry_score, indices)
 
-    # gt_bdry_score = calc_bdry_score(mask_pred, mask_true)  # todo
+    polygon_true, _ = mask2polygon(mask_true, concat_verts=True)
+    polygon_pred, _ = mask2polygon(mask_pred, concat_verts=True)
 
-    gt_bdry_score = pred_bdry_score
+    gt_bdry_score = calc_bdry_score(polygon_true, polygon_pred)
 
     y_true = K.reshape(gt_bdry_score, (-1,))
     y_pred = K.reshape(pred_bdry_score, (-1,))
