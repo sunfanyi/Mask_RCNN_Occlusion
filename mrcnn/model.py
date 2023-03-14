@@ -1272,7 +1272,6 @@ def mrcnn_bdry_score_loss_graph(target_masks, target_class_ids, pred_masks,
     """
     # Reshape for simplicity. Merge first two dimensions into one.
     target_class_ids = K.reshape(target_class_ids, (-1,))  # [N]
-    print(target_class_ids)
     mask_shape = tf.shape(target_masks)
     target_masks = K.reshape(target_masks,
                     (-1, mask_shape[2], mask_shape[3]))  # [N, height, width]
@@ -2148,7 +2147,7 @@ class MaskRCNN():
                                               config.MASK_POOL_SIZE,
                                               config.NUM_CLASSES,
                                               train_bn=config.TRAIN_BN)
-            print(mrcnn_mask, '-> predicted_mask')
+
             mrcnn_bdry_score = build_bdry_score_graph(rois, mrcnn_feature_maps,
                                                       input_image_meta,
                                                       mrcnn_mask,
@@ -2208,9 +2207,18 @@ class MaskRCNN():
                                               config.NUM_CLASSES,
                                               train_bn=config.TRAIN_BN)
 
+            mrcnn_bdry_score = build_bdry_score_graph(rpn_rois, mrcnn_feature_maps,
+                                                      input_image_meta,
+                                                      mrcnn_mask,
+                                                      config.POOL_SIZE,
+                                                      config.MASK_POOL_SIZE,
+                                                      config.NUM_CLASSES,
+                                                      train_bn=config.TRAIN_BN,
+                                                      fc_layers_size=config.FPN_CLASSIF_FC_LAYERS_SIZE)
+
             model = KM.Model([input_image, input_image_meta, input_anchors],
                              [detections, mrcnn_class, mrcnn_bbox,
-                                 mrcnn_mask, rpn_rois, rpn_class, rpn_bbox],
+                                 mrcnn_mask, mrcnn_bdry_score, rpn_rois, rpn_class, rpn_bbox],
                              name='mask_rcnn')
 
         # Add multi-GPU support.
@@ -2321,7 +2329,7 @@ class MaskRCNN():
         self.keras_model._per_input_losses = {}
         loss_names = [
             "rpn_class_loss",  "rpn_bbox_loss",
-            "mrcnn_class_loss", "mrcnn_bbox_loss", "mrcnn_mask_loss"]
+            "mrcnn_class_loss", "mrcnn_bbox_loss", "mrcnn_mask_loss", "bdry_score_loss"]
         for name in loss_names:
             layer = self.keras_model.get_layer(name)
             if layer.output in self.keras_model.losses:
@@ -2584,7 +2592,7 @@ class MaskRCNN():
         windows = np.stack(windows)
         return molded_images, image_metas, windows
 
-    def unmold_detections(self, detections, mrcnn_mask, original_image_shape,
+    def unmold_detections(self, detections, mrcnn_mask, mrcnn_bdry_score, original_image_shape,
                           image_shape, window):
         """Reformats the detections of one image from the format of the neural
         network output to a format suitable for use in the rest of the
@@ -2592,6 +2600,7 @@ class MaskRCNN():
 
         detections: [N, (y1, x1, y2, x2, class_id, score)] in normalized coordinates
         mrcnn_mask: [N, height, width, num_classes]
+        mrcnn_bdry_score: [N, 1, 1, num_classes]
         original_image_shape: [H, W, C] Original image shape before resizing
         image_shape: [H, W, C] Shape of the image after resizing and padding
         window: [y1, x1, y2, x2] Pixel coordinates of box in the image where the real
@@ -2611,8 +2620,9 @@ class MaskRCNN():
         # Extract boxes, class_ids, scores, and class-specific masks
         boxes = detections[:N, :4]
         class_ids = detections[:N, 4].astype(np.int32)
-        scores = detections[:N, 5]
+        class_scores = detections[:N, 5]
         masks = mrcnn_mask[np.arange(N), :, :, class_ids]
+        bdry_scores = np.squeeze(mrcnn_bdry_score)[np.arange(N), class_ids]
 
         # Translate normalized coordinates in the resized image to pixel
         # coordinates in the original image before resizing
@@ -2634,8 +2644,9 @@ class MaskRCNN():
         if exclude_ix.shape[0] > 0:
             boxes = np.delete(boxes, exclude_ix, axis=0)
             class_ids = np.delete(class_ids, exclude_ix, axis=0)
-            scores = np.delete(scores, exclude_ix, axis=0)
+            class_scores = np.delete(class_scores, exclude_ix, axis=0)
             masks = np.delete(masks, exclude_ix, axis=0)
+            bdry_scores = np.delete(bdry_scores, exclude_ix, axis=0)
             N = class_ids.shape[0]
 
         # Resize masks to original image size and set boundary threshold.
@@ -2647,7 +2658,7 @@ class MaskRCNN():
         full_masks = np.stack(full_masks, axis=-1)\
             if full_masks else np.empty(original_image_shape[:2] + (0,))
 
-        return boxes, class_ids, scores, full_masks
+        return boxes, class_ids, class_scores, full_masks, bdry_scores
 
     def detect(self, images, verbose=0):
         """Runs the detection pipeline.
@@ -2690,20 +2701,22 @@ class MaskRCNN():
             log("image_metas", image_metas)
             log("anchors", anchors)
         # Run object detection
-        detections, _, _, mrcnn_mask, _, _, _ =\
+        detections, _, _, mrcnn_mask, mrcnn_bdry_score, _, _, _ =\
             self.keras_model.predict([molded_images, image_metas, anchors], verbose=0)
         # Process detections
         results = []
         for i, image in enumerate(images):
-            final_rois, final_class_ids, final_scores, final_masks =\
-                self.unmold_detections(detections[i], mrcnn_mask[i],
+            final_rois, final_class_ids, final_class_scores, final_masks, final_bdry_scores =\
+                self.unmold_detections(detections[i], mrcnn_mask[i], mrcnn_bdry_score[i],
                                        image.shape, molded_images[i].shape,
                                        windows[i])
             results.append({
                 "rois": final_rois,
                 "class_ids": final_class_ids,
-                "scores": final_scores,
+                "class_scores": final_class_scores,
                 "masks": final_masks,
+                "bdry_scores": final_bdry_scores,
+                "scores": final_bdry_scores*final_class_scores  # todo: this should be multiplication
             })
         return results
 
@@ -2747,21 +2760,23 @@ class MaskRCNN():
             log("image_metas", image_metas)
             log("anchors", anchors)
         # Run object detection
-        detections, _, _, mrcnn_mask, _, _, _ =\
+        detections, _, _, mrcnn_mask, mrcnn_bdry_score, _, _, _ =\
             self.keras_model.predict([molded_images, image_metas, anchors], verbose=0)
         # Process detections
         results = []
         for i, image in enumerate(molded_images):
             window = [0, 0, image.shape[0], image.shape[1]]
-            final_rois, final_class_ids, final_scores, final_masks =\
-                self.unmold_detections(detections[i], mrcnn_mask[i],
+            final_rois, final_class_ids, final_class_scores, final_masks, final_bdry_scores =\
+                self.unmold_detections(detections[i], mrcnn_mask[i], mrcnn_bdry_score[i],
                                        image.shape, molded_images[i].shape,
                                        window)
             results.append({
                 "rois": final_rois,
                 "class_ids": final_class_ids,
-                "scores": final_scores,
+                "class_scores": final_class_scores,
                 "masks": final_masks,
+                "bdry_scores": final_bdry_scores,
+                "scores": final_bdry_scores*final_class_scores  # todo: this should be multiplication
             })
         return results
 
