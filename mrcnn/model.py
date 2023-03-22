@@ -1258,15 +1258,15 @@ def mrcnn_mask_loss_graph(target_masks, target_class_ids, pred_masks):
 
 
 def mrcnn_bdry_score_loss_graph(target_masks, target_class_ids, pred_masks,
-                                pred_bdry_score, smooth=0.000001):
-    """Mask l2 loss for the boundary head.
+                                pred_bdry_score):
+    """Boundary score loss for the boundary head.
 
     target_masks: [batch, num_rois, height, width].
         A float32 tensor of values 0 or 1. Uses zero padding to fill array.
     target_class_ids: [batch, num_rois]. Integer class IDs. Zero padded.
     pred_masks: [batch, proposals, height, width, num_classes] float32 tensor
                 with values from 0 to 1.
-    pred_mask_iou: [batch, num_rois, 1, 1, num_classes] float32 tensor
+    pred_bdry_score: [batch, num_rois, 1, 1, num_classes] float32 tensor
                 with values from 0 to 1,
                 dim[2, 3] = [1, 1] caused by covd at the final of the scoring graph, must use squeeze.
     """
@@ -1306,11 +1306,14 @@ def mrcnn_bdry_score_loss_graph(target_masks, target_class_ids, pred_masks,
 
     # Do the same for the bdry_score
     pred_bdry_score = tf.gather_nd(pred_bdry_score, indices)
+    # print(tf.shape(mask_pred)[0])
+    if mask_pred.shape[0] > 0:
+        polygon_true, _ = mask2polygon(mask_true, concat_verts=True)
+        polygon_pred, _ = mask2polygon(mask_pred, concat_verts=True)
 
-    polygon_true, _ = mask2polygon(mask_true, concat_verts=True)
-    polygon_pred, _ = mask2polygon(mask_pred, concat_verts=True)
-
-    gt_bdry_score = calc_bdry_score(polygon_true, polygon_pred)
+        gt_bdry_score = calc_bdry_score(polygon_true, polygon_pred)
+    else:
+        gt_bdry_score = pred_bdry_score
 
     y_true = K.reshape(gt_bdry_score, (-1,))
     y_pred = K.reshape(pred_bdry_score, (-1,))
@@ -2171,7 +2174,7 @@ class MaskRCNN():
                 [target_bbox, target_class_ids, mrcnn_bbox])
             mask_loss = KL.Lambda(lambda x: mrcnn_mask_loss_graph(*x), name="mrcnn_mask_loss")(
                 [target_mask, target_class_ids, mrcnn_mask])
-            bdry_score_loss = KL.Lambda(lambda x: mrcnn_bdry_score_loss_graph(*x), name="mrcnn_mask_bdry_loss")(
+            bdry_score_loss = KL.Lambda(lambda x: mrcnn_bdry_score_loss_graph(*x), name="bdry_score_loss")(
                 [target_mask, target_class_ids, mrcnn_mask, mrcnn_bdry_score])
 
             # Model

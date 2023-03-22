@@ -8,6 +8,7 @@
 # Tools for this study
 
 import numpy as np
+# import tensorflow as tf
 import matplotlib.pyplot as plt
 from skimage.measure import find_contours
 
@@ -63,12 +64,17 @@ def mask2polygon(mask, ratio=1, concat_verts=False):
         a single list
     """
     # Pad to ensure proper polygons for masks that touch image edges.
+    # print(mask)
+    # print(mask.shape)
     padded_mask = np.zeros(
         (mask.shape[0], mask.shape[1] + 2, mask.shape[2] + 2), dtype=np.uint8)
+    # padded_mask = tf.zeros(
+    #     (mask.shape[0], mask.shape[1] + 2, mask.shape[2] + 2), dtype=mask.dtype)
     padded_mask[:, 1:-1, 1:-1] = mask
 
     contours_flat = []  # 2n x 1
     contours_xy = []  # n x 2
+
 
     for i in range(mask.shape[0]):  # for each segmentation
         contour = find_contours(padded_mask[i, :, :], 0.5)

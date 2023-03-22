@@ -12,7 +12,6 @@ import imgaug
 
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 from pycocotools.coco import COCO
-from mrcnn.utils_occlusion import annToMask
 
 # Root directory of the project
 ROOT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -20,6 +19,8 @@ ROOT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 # Import Mask RCNN
 sys.path.append(ROOT_DIR)  # To find local version of the library
 from mrcnn.config import Config
+# from mrcnn.utils import compute_iou
+from mrcnn.utils_occlusion import annToMask
 from mrcnn import model as modellib, utils
 
 # ROOT_DIR = os.path.abspath("../")
@@ -119,55 +120,6 @@ class OcclusionDataset(utils.Dataset):
                 if mask_format == 'polygon':
                     seg = annotation['segmentation']
                     m = annToMask(seg, image_info["height"], image_info["width"])
-                    #
-                    # mask = m
-                    # padded_mask = np.zeros(
-                    #     (mask.shape[0] + 2, mask.shape[1] + 2),
-                    #     dtype=np.uint8)
-                    # padded_mask[1:-1, 1:-1] = mask
-                    #
-                    # # contours_flat = []  # 2n x 1
-                    # # contours_xy = []  # n x 2
-                    #
-                    # contour = find_contours(padded_mask, 0.5)
-                    # xy = []  # multiple verts (in xy)
-                    # flat = []  # multiple verts (in flat)
-                    # i = 0
-                    # for verts in contour:
-                    #     # Subtract the padding and flip (y, x) to (x, y)
-                    #     verts = np.fliplr(verts) - 1
-                    #     # verts = verts[::10]  # make points less dense
-                    #     xy.append(verts.tolist())
-                    #     # flatten the 2D list
-                    #     flat.append(
-                    #         [item for sublist in verts for item in sublist])
-                    #
-                    # contours_xy = xy
-                    # contours_flat = flat
-                    #
-                    # seg = contours_flat
-                    # if len(seg) == 1:
-                    #     binary_mask = annToMask(seg, image_info["height"], image_info["width"])
-                    # else:  # the mask contains 'holes' overlayyed in the middle
-                    #     # binary_mask = annToMask(seg, image_info["height"], image_info["width"])
-                    #     outer_edge_poly = seg[0]
-                    #     mask_outer = annToMask([outer_edge_poly],
-                    #                            image_info["height"], image_info["width"])
-                    #     inner_edge_poly = seg[1:]  # holes to be subtracted
-                    #     masks_inner = []
-                    #     for inner in inner_edge_poly:
-                    #         masks_inner.append(
-                    #             annToMask([inner], image_info["height"], image_info["width"]))
-                    #     # find their union
-                    #     union_inner = np.logical_or.reduce(masks_inner)
-                    #     # subtract the inner masks
-                    #     binary_mask = np.logical_and(mask_outer,
-                    #                                  np.logical_not(
-                    #                                      union_inner))
-                    # mask = binary_mask
-                    #
-                    # # m = np.transpose(mask, (1, 2, 0))
-                    # m = mask
 
                 elif mask_format == 'bitmap':
                     m = np.array(seg)
@@ -301,7 +253,7 @@ if __name__ == '__main__':
     # Train or evaluate
     if args.command == "train":
         # Training dataset. Use the training set and 35K from the
-        # validation set, as as in the Mask RCNN paper.
+        # validation set, as in the Mask RCNN paper.
         dataset_train = OcclusionDataset()
         dataset_train.load_occlusion(args.dataset, "train", class_ids=class_ids)
         dataset_train.prepare()
@@ -318,6 +270,34 @@ if __name__ == '__main__':
 
         # *** This training schedule is an example. Update to your needs ***
 
+        # # Training - Stage 1
+        # print("Training Stage 1")
+        # model.train(dataset_train, dataset_val,
+        #             learning_rate=config.LEARNING_RATE,
+        #             epochs=60,
+        #             layers='heads',
+        #             augmentation=augmentation,
+        #             info=args.info)
+        #
+        # # Training - Stage 2
+        # print("Training Stage 2")
+        # model.train(dataset_train, dataset_val,
+        #             learning_rate=config.LEARNING_RATE,
+        #             epochs=80,
+        #             layers='4+',
+        #             augmentation=augmentation,
+        #             info=args.info)
+        #
+        # # Training - Stage 3
+        # # Fine tune all layers
+        # print("Training Stage 3")
+        # model.train(dataset_train, dataset_val,
+        #             learning_rate=config.LEARNING_RATE / 10,
+        #             epochs=120,
+        #             layers='all',
+        #             augmentation=augmentation,
+        #             info=args.info)
+
         # Training - Stage 1
         print("Training Stage 1")
         model.train(dataset_train, dataset_val,
@@ -326,12 +306,6 @@ if __name__ == '__main__':
                     layers='all',
                     augmentation=augmentation,
                     info=args.info)
-        # model.train(dataset_train, dataset_val,
-        #             learning_rate=config.LEARNING_RATE,
-        #             epochs=2,
-        #             layers='all',
-        #             augmentation=augmentation,
-        #             info=args.info)
 
         # Training - Stage 2
         print("Training Stage 2")
