@@ -1294,10 +1294,14 @@ def mrcnn_bdry_score_loss_graph(target_masks, target_class_ids, pred_masks,
         tf.gather(target_class_ids, positive_ix), tf.int64)
     indices = tf.stack([positive_ix, positive_class_ids], axis=1)
 
-    # Gather the masks (predicted and true) that contribute to loss
+    # Gather the masks (predicted and true) that contribute to loss, dtype = tf.float32 (possibilities)
     mask_true = tf.gather(target_masks, positive_ix)  # [N, h, w]
     mask_pred = tf.gather_nd(pred_masks, indices)  # [N, h, w]
+
+    # convert to tf.bool
     mask_true = tf.cast(mask_true, tf.bool)
+    # applies a threshold to the mask_pred tensor, setting its elements to 1 (True)
+    # if the corresponding element is greater than or equal to 0.5, and 0 (False) otherwise:
     mask_pred = tf.cast(tf.where(
         tf.less(mask_pred, tf.zeros_like(mask_pred) + 0.5),
         tf.zeros_like(mask_pred),

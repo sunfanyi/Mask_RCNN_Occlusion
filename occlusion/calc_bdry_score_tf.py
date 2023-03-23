@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-# @File    : find_bdry_tf.py
+# @File    : calc_bdry_score_tf.py
 # @Time    : 06/03/2023
 # @Author  : Fanyi Sun
 # @Github  : https://github.com/sunfanyi
@@ -26,10 +26,6 @@ from mrcnn.utils_occlusion import mask2polygon
 image_dir = '../../datasets/dataset_occluded/images'
 
 
-# coords = np.argwhere(mask > 0)
-# coords = coords.reshape((-1, 2))  # N x 2
-# coords = np.fliplr(coords)  # (y, x) to (x, y)
-# tf.where
 sample_info = json.load(open('sample_mask_info.json', 'r'))
 N = len(sample_info)
 
@@ -54,101 +50,57 @@ for i in range(N):
         break
 
 mask_true = np.array(mask_true, dtype=np.bool)
-a = np.argwhere(mask_true)
-# b = tl.prepro.find_contours(mask_true)
-# y = tf.placeholder(tf.float32, shape=[None])
 polygon_true, _ = mask2polygon(mask_true, concat_verts=True)
 
 
 @tf.function
-def cap_and_average(tensor, max_length=100):
-    # return tensor
+def process_tensor_to_same_length(tensor, max_length=100):
+    """
+    Define a function that processes input tensor to have the same length as the given max_length
+    If the input tensor's length is greater than max_length, it will be capped using cap_tensor function
+    If the input tensor's length is less than max_length, it will be extended using extend_tensor function
+    """
     tensor_length = tf.shape(tensor)[0]
     ratio = tf.cast(tensor_length, tf.float32) / max_length
     case = tf.greater(ratio, 1)
     result = tf.cond(case,
-                     lambda: process_tensor(tensor, tensor_length, max_length, ratio),
+                     lambda: cap_tensor(tensor, max_length, ratio),
                      lambda: extend_tensor(tensor, tensor_length, max_length))
     return result
 
+
 @tf.function
-def process_tensor(tensor, tensor_length, max_length, ratio):
+def cap_tensor(tensor, max_length, ratio):
+    """
+    Cap the input tensor to max_length by averaging the values in each interval
+    """
+    # Calculate the indices corresponding to the intervals
     indices = tf.range(max_length, dtype=tf.float32) * ratio
     indices = tf.cast(tf.round(indices), tf.int32)
+
+    indices, _ = tf.unique(indices)  # remove duplicates
 
     starts = tf.concat([[0], indices[:-1]], axis=0)
     ends = indices
 
+    # Initialize an empty TensorArray to store the averaged values
     averaged_tensor = tf.TensorArray(dtype=tensor.dtype, size=max_length)
 
     for i in tf.range(max_length):
+        # Extract values within the interval
         interval = tensor[starts[i]:ends[i], :]
+        # Compute average
         avg_value = tf.reduce_mean(interval, axis=0)
         averaged_tensor = averaged_tensor.write(i, avg_value)
 
     return averaged_tensor.stack()
 
 
-# this has no error but extended points in same locations
-# @tf.function
-# def extend_tensor(tensor, tensor_length, max_length):
-#     num_new_points = max_length - tensor_length
-#     if tf.greater(num_new_points, 0):
-#         step = (tensor_length - 1) / (num_new_points + 1)
-#         step = tf.cast(step, tf.int32)
-#
-#         positions = tf.cast(tf.round(tf.range(1, num_new_points + 1) * step), tf.int32)
-#         positions = tf.clip_by_value(positions, 0, tensor_length - 2)
-#
-#         interp_points = (tf.gather(tensor, positions) + tf.gather(tensor, positions - 1)) / 2
-#         interp_points = tf.cast(interp_points, tf.int32)
-#
-#         extended_tensor = tf.concat([tensor[:positions[0]], interp_points[0:1]], axis=0)
-#         for i in range(1, num_new_points):
-#             extended_tensor = tf.concat([extended_tensor, tensor[positions[i - 1]:positions[i]], interp_points[i:i + 1]], axis=0)
-#         extended_tensor = tf.concat([extended_tensor, tensor[positions[-1]:]], axis=0)
-#
-#         return extended_tensor
-#     else:
-#         return tensor
-
-
-
-# @tf.function
-# def extend_tensor(tensor, tensor_length, max_length):
-#     num_points_to_add = tf.cast(tf.math.ceil((max_length - tensor_length) / (tensor_length - 1)), tf.int32)
-#     extended_tensor = tf.TensorArray(dtype=tf.int32, size=max_length)
-#
-#     counter = tf.constant(0, dtype=tf.int32)
-#
-#     for i in tf.range(tensor_length - 1):
-#         p1 = tensor[i]
-#         p2 = tensor[i + 1]
-#
-#         diff = p2 - p1
-#
-#         for j in tf.range(num_points_to_add + 1):
-#             alpha = tf.cast(j, tf.float32) / tf.cast(num_points_to_add + 1, tf.float32)
-#             new_point = tf.cast(p1, tf.float32) + alpha * tf.cast(diff, tf.float32)
-#
-#             if tf.less(counter, max_length):
-#                 extended_tensor = extended_tensor.write(counter, tf.cast(new_point, tf.int32))
-#                 counter += 1
-#
-#     # Add the last point
-#     while tf.less(counter, max_length):
-#         extended_tensor = extended_tensor.write(counter, tensor[-1])
-#         counter += 1
-#
-#     # # Add the last point
-#     # if tf.less(counter, max_length):
-#     #     extended_tensor = extended_tensor.write(counter, tensor[-1])
-#
-#     return extended_tensor.stack()
-
-
 @tf.function
 def extend_tensor(tensor, tensor_length, max_length):
+    """
+    Extend the input tensor to max_length by linear interpolation.
+    """
     num_points_to_add = tf.cast(tf.math.ceil((max_length - tensor_length) / (tensor_length - 1)), tf.int32)
     extended_tensor = tf.TensorArray(dtype=tf.int32, size=0, dynamic_size=True)
 
@@ -165,12 +117,13 @@ def extend_tensor(tensor, tensor_length, max_length):
     # Add the last point
     extended_tensor = extended_tensor.write(extended_tensor.size(), tensor[-1])
 
-    # Make sure the final tensor has exactly 100 points (in case of rounding issues)
+    # Make sure the final tensor has no less than 100 points (in case of rounding issues)
     while tf.less(extended_tensor.size(), max_length):
         extended_tensor = extended_tensor.write(extended_tensor.size(), tensor[-1])
 
-    # Changes: Randomly remove points to make the final tensor have exactly 100 points
+    # Make sure it has no more than 100 points:
     def true_fn():
+        # Randomly remove points to make the final tensor have exactly 100 points
         indices_to_keep = tf.random.shuffle(tf.range(extended_tensor.size()))[:max_length]
         indices_to_keep = tf.sort(indices_to_keep)
         return tf.gather(extended_tensor.stack(), indices_to_keep, axis=0)
@@ -180,12 +133,10 @@ def extend_tensor(tensor, tensor_length, max_length):
 
     final_extended_tensor = tf.cond(tf.greater(extended_tensor.size(), max_length), true_fn, false_fn)
 
-
     return final_extended_tensor
 
 
-
-mask = tf.placeholder(tf.float32, shape=[None, None, None])
+mask = tf.placeholder(tf.bool, shape=[None, None, None])
 
 
 def find_contours_wrapper(mask_element):
@@ -196,18 +147,16 @@ def find_contours_wrapper(mask_element):
 
 def process_mask(mask_element):
     def case_zero():
-        # poly = tf.where(mask_element)
-        # poly = tf.cast(poly, tf.int32)
-        # poly = tl.prepro.find_contours(mask_element)
         poly = tf.py_func(find_contours_wrapper, [mask_element], tf.float32)
         poly = tf.cast(poly, tf.int32)
-        poly_capped = cap_and_average(poly)
-        poly_xy = tf.reverse(poly_capped, axis=[1])
+        poly_capped = process_tensor_to_same_length(poly)
+        poly_xy = tf.reverse(poly_capped, axis=[1])  # yx to xy
         return poly_xy
 
     def case_one():
         return tf.zeros(shape=[0, 2], dtype=tf.int32)
 
+    # mask_element = tf.cast(mask_element, tf.bool)
     result = tf.cond(tf.greater(tf.shape(mask_element)[0], 0), case_zero, case_one)
     return result
 
@@ -221,16 +170,7 @@ with tf.Session() as sess:
     print(output_data)
 
 
-
-# xy to flat
-contours_flat = output_data.reshape(output_data.shape[0], -1)
-# contours_flat = []  # 2n x 1
-# for i in range(output_data.shape[0]):  # for each segmentation
-#     contour = output_data[i]
-#     contours_flat.append([item for sublist in contour for item in sublist])
-
-
-# plot to check if any loss in accuracy
+# testing:
 for i in range(len(output_data)):
     image = skimage.io.imread(os.path.join(image_dir, file_names[i]))
     image, _, _, _, _ = resize_image(image, min_dim=800, min_scale=0,
@@ -238,10 +178,8 @@ for i in range(len(output_data)):
 
     # plot gt polygons
     fig, ax = plt.subplots()
-    # axes = get_ax(1, 2, size=6)
     ax.imshow(image)
     verts = output_data[i]
-    # verts = verts[::10]  # make points less dense
     xs, ys = zip(*verts)
     ax.scatter(xs, ys, c='r', s=1)
     ax.axis('off')
