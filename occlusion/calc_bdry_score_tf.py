@@ -21,10 +21,8 @@ import keras.layers as KL
 ROOT_DIR = os.path.abspath("../")
 sys.path.append(ROOT_DIR)  # To find local version of the library
 from mrcnn.utils import expand_mask, resize_image
-from mrcnn.utils_occlusion import mask2polygon
 
 image_dir = '../../datasets/dataset_occluded/images'
-
 
 sample_info = json.load(open('sample_mask_info.json', 'r'))
 N = len(sample_info)
@@ -33,6 +31,9 @@ ids = [i['id'] for i in sample_info]
 file_names = [i['file_names'] for i in sample_info]
 mask_true = []
 bbox_true = []
+mask_pred = []
+bbox_pred = []
+
 
 for i in range(N):
     # GT
@@ -46,11 +47,21 @@ for i in range(N):
 
     bbox_true.append(bbox[0])
     mask_true.append(seg[:, :, 0])
+
+    # predicted
+    bbox = sample_info[i]['bbox_pred']
+    bbox = np.expand_dims(bbox, 0).astype('int')
+
+    seg = sample_info[i]['mask_pred']
+    seg = np.expand_dims(seg, -1)
+    image_shape = (int(sample_info[i]['height']), int(sample_info[i]['width']))
+    seg = expand_mask(bbox, seg, image_shape)
+
+    bbox_pred.append(bbox[0])
+    mask_pred.append(seg[:, :, 0])
+
     if i == 3:
         break
-
-mask_true = np.array(mask_true, dtype=np.bool)
-polygon_true, _ = mask2polygon(mask_true, concat_verts=True)
 
 
 @tf.function
@@ -136,52 +147,86 @@ def extend_tensor(tensor, tensor_length, max_length):
     return final_extended_tensor
 
 
-mask = tf.placeholder(tf.bool, shape=[None, None, None])
-
-
-def find_contours_wrapper(mask_element):
-    contours = find_contours(mask_element, 0.5)[0]
+def find_contours_wrapper(mask):
+    # Pad to ensure proper polygons for masks that touch image edges.
+    padded_mask = np.zeros(
+        (mask.shape[0] + 2, mask.shape[1] + 2), dtype=np.uint8)
+    padded_mask[1:-1, 1:-1] = mask
+    contours = find_contours(padded_mask, 0.5)[0]
     return np.array(contours, dtype=np.float32)  # output as numpy array
     # return np.array(contours, dtype=np.float32)[::50]  # for testing
 
 
-def process_mask(mask_element):
-    def case_zero():
+def mask2polygon(mask_element):
+    def case_one():
         poly = tf.py_func(find_contours_wrapper, [mask_element], tf.float32)
         poly = tf.cast(poly, tf.int32)
         poly_capped = process_tensor_to_same_length(poly)
         poly_xy = tf.reverse(poly_capped, axis=[1])  # yx to xy
         return poly_xy
 
-    def case_one():
+    def case_two():
         return tf.zeros(shape=[0, 2], dtype=tf.int32)
 
     # mask_element = tf.cast(mask_element, tf.bool)
-    result = tf.cond(tf.greater(tf.shape(mask_element)[0], 0), case_zero, case_one)
+    result = tf.cond(tf.greater(tf.shape(mask_element)[0], 0), case_one, case_two)
     return result
 
 
-y = tf.map_fn(process_mask, mask, dtype=tf.int32)
+# Calculate boundary score
+def calc_bdry_score(args):
+    polygon_true, polygon_pred = args
+
+    # search for the cloest point
+    diff = polygon_pred[:, tf.newaxis, :] - polygon_true[tf.newaxis, :, :]
+    diff = tf.cast(diff, tf.float32)
+    all_dist = tf.sqrt(tf.reduce_sum(tf.square(diff), axis=-1))
+    min_dist = tf.reduce_min(all_dist, axis=1)  # [num_points]
+    bdry_score = tf.reduce_mean(min_dist) / tf.cast(tf.shape(min_dist)[0], tf.float32)
+    return bdry_score
 
 
+mask_true = np.array(mask_true, dtype=np.bool)
+mask_pred = np.array(mask_pred, dtype=np.bool)
+
+mask_true_ph = tf.placeholder(tf.bool, shape=[None, None, None])
+mask_pred_ph = tf.placeholder(tf.bool, shape=[None, None, None])
+
+polygons_true = tf.map_fn(mask2polygon, mask_true_ph, dtype=tf.int32)
+polygons_pred = tf.map_fn(mask2polygon, mask_pred_ph, dtype=tf.int32)
+bdry_score = tf.map_fn(calc_bdry_score, (polygons_true, polygons_pred), dtype=tf.float32)
+
+# Run graph
 with tf.Session() as sess:
-    input_data = mask_true
-    output_data = sess.run(y, feed_dict={mask: input_data})
-    print(output_data)
+    output_tensors = [bdry_score, polygons_true, polygons_pred]
+    output_data = sess.run(output_tensors, feed_dict={mask_true_ph: mask_true,
+                                                      mask_pred_ph: mask_pred})
+
+    bdry_score_output, polygons_true_output, polygons_pred_output = output_data
 
 
 # testing:
-for i in range(len(output_data)):
+for i in range(len(polygons_true_output)):
     image = skimage.io.imread(os.path.join(image_dir, file_names[i]))
     image, _, _, _, _ = resize_image(image, min_dim=800, min_scale=0,
                                      max_dim=1024, mode='square')
 
     # plot gt polygons
-    fig, ax = plt.subplots()
-    ax.imshow(image)
-    verts = output_data[i]
+    fig, axes = plt.subplots(1, 2, figsize=(12, 6))
+    # axes = get_ax(1, 2, size=6)
+    axes[0].imshow(image)
+    verts = polygons_true_output[i]
     xs, ys = zip(*verts)
-    ax.scatter(xs, ys, c='r', s=1)
-    ax.axis('off')
-    ax.set_title('GT')
-    fig.show()
+    axes[0].scatter(xs, ys, c='r', s=1)
+    axes[0].axis('off')
+    axes[0].set_title('GT')
+
+    # plot predicted polygons
+    axes[1].imshow(image)
+    verts = polygons_pred_output[i]
+    xs, ys = zip(*verts)
+    axes[1].scatter(xs, ys, c='r', s=1)
+    axes[1].axis('off')
+    axes[1].set_title('Prediction')
+    fig.suptitle('bdry_score = %.5f' % bdry_score_output[i])
+    plt.show()
