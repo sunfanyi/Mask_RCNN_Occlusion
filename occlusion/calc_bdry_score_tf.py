@@ -6,8 +6,6 @@
 # @Software: PyCharm
 
 import tensorflow as tf
-import tensorlayer as tl
-import numpy as np
 from skimage.measure import find_contours
 import os
 import sys
@@ -15,8 +13,6 @@ import json
 import numpy as np
 import matplotlib.pyplot as plt
 import skimage.io
-import keras.backend as K
-import keras.layers as KL
 
 ROOT_DIR = os.path.abspath("../")
 sys.path.append(ROOT_DIR)  # To find local version of the library
@@ -148,6 +144,10 @@ def extend_tensor(tensor, tensor_length, max_length):
 
 
 def find_contours_wrapper(mask):
+    # if empty mask, return empty array
+    if ~mask.any():
+        return np.array([[0, 0]], dtype=np.float32)
+
     # Pad to ensure proper polygons for masks that touch image edges.
     padded_mask = np.zeros(
         (mask.shape[0] + 2, mask.shape[1] + 2), dtype=np.uint8)
@@ -159,7 +159,7 @@ def find_contours_wrapper(mask):
 
 def mask2polygon(mask_element):
     def case_one():
-        poly = tf.py_func(find_contours_wrapper, [mask_element], tf.float32)
+        poly = tf.numpy_function(find_contours_wrapper, [mask_element], tf.float32)
         poly = tf.cast(poly, tf.int32)
         poly_capped = process_tensor_to_same_length(poly)
         poly_xy = tf.reverse(poly_capped, axis=[1])  # yx to xy

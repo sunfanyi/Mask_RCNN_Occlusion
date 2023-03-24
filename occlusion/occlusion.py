@@ -12,6 +12,7 @@ import imgaug
 
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 from pycocotools.coco import COCO
+from pycocotools import mask as maskUtils
 
 # Root directory of the project
 ROOT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -19,8 +20,6 @@ ROOT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 # Import Mask RCNN
 sys.path.append(ROOT_DIR)  # To find local version of the library
 from mrcnn.config import Config
-# from mrcnn.utils import compute_iou
-from mrcnn.utils_occlusion import annToMask
 from mrcnn import model as modellib, utils
 
 # ROOT_DIR = os.path.abspath("../")
@@ -118,11 +117,10 @@ class OcclusionDataset(utils.Dataset):
                 "occlusion.{}".format(annotation['category_id']))
             if class_id:
                 if mask_format == 'polygon':
-                    seg = annotation['segmentation']
-                    m = annToMask(seg, image_info["height"], image_info["width"])
+                    m = self.annToMask(annotation, image_info["height"], image_info["width"])
 
                 elif mask_format == 'bitmap':
-                    m = np.array(seg)
+                    m = np.array(annotation['segmentation'])
                 # Some objects are so small that they're less than 1 pixel area
                 # and end up rounded out. Skip those objects.
                 if m.max() < 1:
@@ -153,6 +151,34 @@ class OcclusionDataset(utils.Dataset):
             return info['id']
         else:
             super(OcclusionDataset, self).image_reference(image_id)
+
+    def annToRLE(self, ann, height, width):
+        """
+        Convert annotation which can be polygons, uncompressed RLE to RLE.
+        :return: binary mask (numpy 2D array)
+        """
+        segm = ann['segmentation']
+        if isinstance(segm, list):
+            # polygon -- a single object might consist of multiple parts
+            # we merge all parts into one mask rle code
+            rles = maskUtils.frPyObjects(segm, height, width)
+            rle = maskUtils.merge(rles)
+        elif isinstance(segm['counts'], list):
+            # uncompressed RLE
+            rle = maskUtils.frPyObjects(segm, height, width)
+        else:
+            # rle
+            rle = ann['segmentation']
+        return rle
+
+    def annToMask(self, ann, height, width):
+        """
+        Convert annotation which can be polygons, uncompressed RLE, or RLE to binary mask.
+        :return: binary mask (numpy 2D array)
+        """
+        rle = self.annToRLE(ann, height, width)
+        m = maskUtils.decode(rle)
+        return m
 
 
 ############################################################
@@ -270,7 +296,7 @@ if __name__ == '__main__':
 
         # *** This training schedule is an example. Update to your needs ***
 
-        # # Training - Stage 1
+        # Training - Stage 1
         # print("Training Stage 1")
         # model.train(dataset_train, dataset_val,
         #             learning_rate=config.LEARNING_RATE,
@@ -325,16 +351,16 @@ if __name__ == '__main__':
                     layers='all',
                     augmentation=augmentation,
                     info=args.info)
-
-    elif args.command == "evaluate":
-        # Validation dataset
-        dataset_val = OcclusionDataset()
-        val_type = "val" if args.year in '2017' else "minival"
-        coco = dataset_val.load_occlusion(args.dataset, val_type)
-        dataset_val.prepare()
-        print("Running COCO evaluation on {} images.".format(args.limit))
-        # evaluate_coco(model, dataset_val, coco, "bbox", limit=int(args.limit))
-    else:
-        print("'{}' is not recognized. "
-              "Use 'train' or 'evaluate'".format(args.command))
+    #
+    # elif args.command == "evaluate":
+    #     # Validation dataset
+    #     dataset_val = OcclusionDataset()
+    #     val_type = "val" if args.year in '2017' else "minival"
+    #     coco = dataset_val.load_occlusion(args.dataset, val_type)
+    #     dataset_val.prepare()
+    #     print("Running COCO evaluation on {} images.".format(args.limit))
+    #     # evaluate_coco(model, dataset_val, coco, "bbox", limit=int(args.limit))
+    # else:
+    #     print("'{}' is not recognized. "
+    #           "Use 'train' or 'evaluate'".format(args.command))
 

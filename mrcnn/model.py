@@ -22,9 +22,9 @@ import keras.backend as K
 import keras.layers as KL
 import keras.engine as KE
 import keras.models as KM
+from skimage.measure import find_contours
 
 from mrcnn import utils
-from mrcnn.utils_occlusion import mask2polygon, calc_bdry_score
 
 # Requires TensorFlow 1.3+ and Keras 2.0.8+.
 from distutils.version import LooseVersion
@@ -1310,14 +1310,10 @@ def mrcnn_bdry_score_loss_graph(target_masks, target_class_ids, pred_masks,
 
     # Do the same for the bdry_score
     pred_bdry_score = tf.gather_nd(pred_bdry_score, indices)
-    # print(tf.shape(mask_pred)[0])
-    if mask_pred.shape[0] > 0:
-        polygon_true, _ = mask2polygon(mask_true, concat_verts=True)
-        polygon_pred, _ = mask2polygon(mask_pred, concat_verts=True)
 
-        gt_bdry_score = calc_bdry_score(polygon_true, polygon_pred)
-    else:
-        gt_bdry_score = pred_bdry_score
+    polygons_true = tf.map_fn(mask2polygon, mask_true, dtype=tf.int32)
+    polygons_pred = tf.map_fn(mask2polygon, mask_pred, dtype=tf.int32)
+    gt_bdry_score = tf.map_fn(calc_bdry_score, (polygons_true, polygons_pred), dtype=tf.float32)
 
     y_true = K.reshape(gt_bdry_score, (-1,))
     y_pred = K.reshape(pred_bdry_score, (-1,))
@@ -1327,6 +1323,132 @@ def mrcnn_bdry_score_loss_graph(target_masks, target_class_ids, pred_masks,
                     tf.constant(0.0))
     loss = K.mean(loss)
     return loss
+
+
+# ===================================  Functions to calculate boundary score loss ===================================
+@tf.function
+def process_tensor_to_same_length(tensor, max_length=100):
+    """
+    Define a function that processes input tensor to have the same length as the given max_length
+    If the input tensor's length is greater than max_length, it will be capped using cap_tensor function
+    If the input tensor's length is less than max_length, it will be extended using extend_tensor function
+    """
+    tensor_length = tf.shape(tensor)[0]
+    ratio = tf.cast(tensor_length, tf.float32) / max_length
+    case = tf.greater(ratio, 1)
+    result = tf.cond(case,
+                     lambda: cap_tensor(tensor, max_length, ratio),
+                     lambda: extend_tensor(tensor, tensor_length, max_length))
+    return result
+
+
+@tf.function
+def cap_tensor(tensor, max_length, ratio):
+    """
+    Cap the input tensor to max_length by averaging the values in each interval
+    """
+    # Calculate the indices corresponding to the intervals
+    indices = tf.range(max_length, dtype=tf.float32) * ratio
+    indices = tf.cast(tf.round(indices), tf.int32)
+
+    indices, _ = tf.unique(indices)  # remove duplicates
+
+    starts = tf.concat([[0], indices[:-1]], axis=0)
+    ends = indices
+
+    # Initialize an empty TensorArray to store the averaged values
+    averaged_tensor = tf.TensorArray(dtype=tensor.dtype, size=max_length)
+
+    for i in tf.range(max_length):
+        # Extract values within the interval
+        interval = tensor[starts[i]:ends[i], :]
+        # Compute average
+        avg_value = tf.reduce_mean(interval, axis=0)
+        averaged_tensor = averaged_tensor.write(i, avg_value)
+
+    return averaged_tensor.stack()
+
+
+@tf.function
+def extend_tensor(tensor, tensor_length, max_length):
+    """
+    Extend the input tensor to max_length by linear interpolation.
+    """
+    num_points_to_add = tf.cast(tf.math.ceil((max_length - tensor_length) / (tensor_length - 1)), tf.int32)
+    extended_tensor = tf.TensorArray(dtype=tf.int32, size=0, dynamic_size=True)
+
+    for i in tf.range(tensor_length - 1):
+        p1 = tensor[i]
+        p2 = tensor[i + 1]
+
+        alpha = tf.linspace(0., 1., num_points_to_add + 2)
+        new_points = tf.cast(p1, tf.float32)[None, :] + alpha[:, None] * tf.cast(p2 - p1, tf.float32)[None, :]
+
+        for j in tf.range(num_points_to_add + 1):
+            extended_tensor = extended_tensor.write(extended_tensor.size(), tf.cast(new_points[j], tf.int32))
+
+    # Add the last point
+    extended_tensor = extended_tensor.write(extended_tensor.size(), tensor[-1])
+
+    # Make sure the final tensor has no less than 100 points (in case of rounding issues)
+    while tf.less(extended_tensor.size(), max_length):
+        extended_tensor = extended_tensor.write(extended_tensor.size(), tensor[-1])
+
+    # Make sure it has no more than 100 points:
+    def true_fn():
+        # Randomly remove points to make the final tensor have exactly 100 points
+        indices_to_keep = tf.random.shuffle(tf.range(extended_tensor.size()))[:max_length]
+        indices_to_keep = tf.sort(indices_to_keep)
+        return tf.gather(extended_tensor.stack(), indices_to_keep, axis=0)
+
+    def false_fn():
+        return extended_tensor.stack()
+
+    final_extended_tensor = tf.cond(tf.greater(extended_tensor.size(), max_length), true_fn, false_fn)
+
+    return final_extended_tensor
+
+
+def find_contours_wrapper(mask):
+    # if empty mask, return empty array
+    if ~mask.any():
+        return np.array([[0, 0]], dtype=np.float32)
+
+    # Pad to ensure proper polygons for masks that touch image edges.
+    padded_mask = np.zeros(
+        (mask.shape[0] + 2, mask.shape[1] + 2), dtype=np.uint8)
+    padded_mask[1:-1, 1:-1] = mask
+    contours = find_contours(padded_mask, 0.5)[0]
+    return np.array(contours, dtype=np.float32)  # output as numpy array
+
+
+def mask2polygon(mask_element):
+    def case_one():
+        poly = tf.numpy_function(find_contours_wrapper, [mask_element], tf.float32)
+        poly = tf.cast(poly, tf.int32)
+        poly_capped = process_tensor_to_same_length(poly)
+        poly_xy = tf.reverse(poly_capped, axis=[1])  # yx to xy
+        return poly_xy
+
+    def case_two():
+        return tf.zeros(shape=[0, 2], dtype=tf.int32)
+
+    # mask_element = tf.cast(mask_element, tf.bool)
+    result = tf.cond(tf.greater(tf.shape(mask_element)[0], 0), case_one, case_two)
+    return result
+
+
+# Calculate boundary score
+def calc_bdry_score(args):
+    polygon_true, polygon_pred = args
+
+    # search for the cloest point
+    diff = polygon_pred[:, tf.newaxis, :] - polygon_true[tf.newaxis, :, :]
+    diff = tf.cast(diff, tf.float32)
+    all_dist = tf.sqrt(tf.reduce_sum(tf.square(diff), axis=-1))
+    min_dist = tf.reduce_min(all_dist, axis=1)  # [num_points]
+    bdry_score = tf.reduce_mean(min_dist) / tf.cast(tf.shape(min_dist)[0], tf.float32)
+    return bdry_score
 
 
 ############################################################
