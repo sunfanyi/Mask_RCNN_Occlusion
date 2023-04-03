@@ -14,18 +14,18 @@ ROOT_DIR = os.path.abspath("../")
 # Import Mask RCNN
 sys.path.append(ROOT_DIR)  # To find local version of the library
 from mrcnn import utils
-import mrcnn.model as modellib
+import mrcnn.model_wo_bdry as modellib
 from mrcnn import visualize
 
 # Import Occlusion config
-sys.path.append(os.path.join(ROOT_DIR, "occlusion/"))
-from occlusion import occlusion
+# sys.path.append(os.path.join(ROOT_DIR, "occlusion/"))
+# from occlusion import occlusion
 # Import COCO config
 sys.path.append(os.path.join(ROOT_DIR, "samples/coco/"))
 import coco
 # Import shape config
-sys.path.append(os.path.join(ROOT_DIR, "samples/shapes/"))
-import shapes
+# sys.path.append(os.path.join(ROOT_DIR, "samples/shapes/"))
+# import shapes
 
 # Directory to save logs and trained model
 MODEL_DIR = os.path.join(ROOT_DIR, "logs")
@@ -45,15 +45,15 @@ IMAGE_DIR = os.path.join(ROOT_DIR, "images")
 #     GPU_COUNT = 1
 #     IMAGES_PER_GPU = 1
 
-config = occlusion.OcclusionConfig()
-# config = coco.CocoConfig()
+# config = occlusion.OcclusionConfig()
+config = coco.CocoConfig()
 # config = shapes.ShapesConfig()
 
 
 # config.display()
 
 # Create model object in inference mode.
-model = modellib.MaskRCNN(mode="training", model_dir=MODEL_DIR, config=config)
+model = modellib.MaskRCNN(mode="inference", model_dir=MODEL_DIR, config=config)
 
 # Load weights trained on MS-COCO
 # model.load_weights(COCO_MODEL_PATH, by_name=True)
@@ -62,7 +62,7 @@ model = modellib.MaskRCNN(mode="training", model_dir=MODEL_DIR, config=config)
 # Generate the plot
 from tensorflow.keras.utils import plot_model
 
-plot_model(model.keras_model, to_file='model_plot_occlusion.png',
+plot_model(model.keras_model, to_file='model_plot_coco_inference.png',
            show_shapes=True,
            show_layer_names=True)
 

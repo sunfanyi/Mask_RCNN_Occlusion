@@ -36,7 +36,7 @@ assert LooseVersion(keras.__version__) >= LooseVersion('2.0.8')
 ############################################################
 #  Utility Functions
 ############################################################
-
+print('correct directory imported')
 def log(text, array=None):
     """Prints a text message. And, optionally, if a Numpy array is provided it
     prints it's shape, min, and max values.
@@ -2336,7 +2336,8 @@ class MaskRCNN():
                                               config.NUM_CLASSES,
                                               train_bn=config.TRAIN_BN)
 
-            mrcnn_bdry_score = build_bdry_score_graph(rpn_rois, mrcnn_feature_maps,
+            # mrcnn_bdry_score = build_bdry_score_graph(rpn_rois, mrcnn_feature_maps,
+            mrcnn_bdry_score = build_bdry_score_graph(detection_boxes, mrcnn_feature_maps,
                                                       input_image_meta,
                                                       mrcnn_mask,
                                                       config.POOL_SIZE,

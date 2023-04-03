@@ -5,6 +5,10 @@
 # @Github  : https://github.com/sunfanyi
 # @Software: PyCharm
 
+"""
+Testing the boundary score calculation using tensorflow
+"""
+
 import tensorflow as tf
 from skimage.measure import find_contours
 import os

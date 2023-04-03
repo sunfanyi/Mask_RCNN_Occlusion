@@ -31,7 +31,6 @@ COCO_MODEL_PATH = os.path.join(ROOT_DIR, "mask_rcnn_coco.h5")
 # through the command line argument --logs
 DEFAULT_LOGS_DIR = os.path.join(ROOT_DIR, "logs")
 
-
 ############################################################
 #  Configurations
 ############################################################
@@ -252,7 +251,7 @@ if __name__ == '__main__':
     else:
         model = modellib.MaskRCNN(mode="inference", config=config,
                                   model_dir=args.logs)
-
+'''
     # Select weights file to load
     if args.model.lower() == "coco":
         model_path = COCO_MODEL_PATH
@@ -364,3 +363,4 @@ if __name__ == '__main__':
     #     print("'{}' is not recognized. "
     #           "Use 'train' or 'evaluate'".format(args.command))
 
+'''
