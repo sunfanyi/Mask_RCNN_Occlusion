@@ -3,10 +3,10 @@ import sys
 import tensorflow as tf
 import matplotlib.pyplot as plt
 
-import occlusion
 
 ROOT_DIR = os.path.abspath("../")
 sys.path.insert(0, ROOT_DIR)
+from occlusion import occlusion
 
 config = occlusion.OcclusionConfig()
 dataset_DIR = '../../datasets/dataset_occluded'
@@ -20,10 +20,12 @@ class InferenceConfig(config.__class__):
 def search_image_ids(dataset, target_ids):
     image_ids = []
     for target_id in target_ids:
-        for i in range(len(dataset.image_info)):
-            if dataset.image_info[i]['id'] == target_id:
-                image_ids.append(i)
-                break
+        source = 'occlusion.' + target_id
+        image_ids.append(dataset.image_from_source_map[source])
+        # for i in range(len(dataset.image_info)):
+        #     if dataset.image_info[i]['id'] == target_id:
+        #         image_ids.append(i)
+        #         break
     return image_ids
 
 
@@ -32,7 +34,7 @@ def get_ax(rows=1, cols=1, size=16):
     return ax
 
 
-def prepare(MODEL_PATH, bdry):
+def prepare(MODEL_PATH, bdry, subset):
     if bdry:
         import mrcnn.model as modellib
     else:
@@ -43,7 +45,7 @@ def prepare(MODEL_PATH, bdry):
     DEVICE = "/gpu:0"  # /cpu:0 or /gpu:0
 
     dataset = occlusion.OcclusionDataset()
-    dataset.load_occlusion(dataset_DIR, "test")
+    dataset.load_occlusion(dataset_DIR, subset)
     dataset.prepare()
 
     print("Images: {}\nClasses: {}".format(len(dataset.image_ids), dataset.class_names))
