@@ -194,6 +194,14 @@ class Config(object):
         "mrcnn_bbox_loss": 1.,
         "mrcnn_mask_loss": 1.
     }
+    # LOSS_WEIGHTS = {
+    #     "rpn_class_loss": 1.,
+    #     "rpn_bbox_loss": 1.,
+    #     "mrcnn_class_loss": 1.,
+    #     "mrcnn_bbox_loss": 1.,
+    #     "mrcnn_mask_loss": 1.,
+    #     "mrcnn_mask_dice_loss": 1.
+    # }
 
     # Use RPN ROIs or externally generated ROIs for training
     # Keep this True for most situations. Set to False if you want to train

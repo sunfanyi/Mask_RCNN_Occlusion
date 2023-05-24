@@ -1274,7 +1274,7 @@ def mrcnn_bdry_score_loss_graph(target_masks, target_class_ids, pred_masks,
     target_class_ids = K.reshape(target_class_ids, (-1,))  # [N]
     mask_shape = tf.shape(target_masks)
     target_masks = K.reshape(target_masks,
-                    (-1, mask_shape[2], mask_shape[3]))  # [N, height, width]
+                             (-1, mask_shape[2], mask_shape[3]))  # [N, height, width]
     pred_shape = tf.shape(pred_masks)
     pred_masks = K.reshape(pred_masks,
                            (-1, pred_shape[2], pred_shape[3],
@@ -1311,9 +1311,19 @@ def mrcnn_bdry_score_loss_graph(target_masks, target_class_ids, pred_masks,
     # Do the same for the bdry_score
     pred_bdry_score = tf.gather_nd(pred_bdry_score, indices)
 
-    polygons_true = tf.map_fn(mask2polygon, mask_true, dtype=tf.int32)
-    polygons_pred = tf.map_fn(mask2polygon, mask_pred, dtype=tf.int32)
-    gt_bdry_score = tf.map_fn(calc_bdry_score, (polygons_true, polygons_pred), dtype=tf.float32)
+    def _calc_score():
+        polygons_pred = tf.map_fn(mask2polygon, mask_pred, dtype=tf.int32)
+        polygons_true = tf.map_fn(mask2polygon, mask_true, dtype=tf.int32)
+        gt_bdry_score = tf.map_fn(calc_bdry_score, (polygons_true, polygons_pred), dtype=tf.float32)
+        return gt_bdry_score
+
+    both_empty = tf.logical_and(tf.equal(tf.size(mask_true), 0), tf.equal(tf.size(mask_pred), 0))
+    either_empty = tf.logical_or(tf.equal(tf.size(mask_true), 0), tf.equal(tf.size(mask_pred), 0))
+    gt_bdry_score = tf.cond(both_empty,
+                            lambda: 1.0,
+                            lambda: tf.cond(either_empty,
+                                            lambda: 0.0,
+                                            lambda: _calc_score()))
 
     y_true = K.reshape(gt_bdry_score, (-1,))
     y_pred = K.reshape(pred_bdry_score, (-1,))
@@ -1339,6 +1349,8 @@ def process_tensor_to_same_length(tensor, max_length=100):
     result = tf.cond(case,
                      lambda: cap_tensor(tensor, max_length, ratio),
                      lambda: extend_tensor(tensor, tensor_length, max_length))
+
+    result = tf.reverse(result, axis=[1])  # yx to xy
     return result
 
 
@@ -1357,7 +1369,7 @@ def cap_tensor(tensor, max_length, ratio):
     ends = indices
 
     # Initialize an empty TensorArray to store the averaged values
-    averaged_tensor = tf.TensorArray(dtype=tensor.dtype, size=max_length)
+    averaged_tensor = tf.TensorArray(dtype=tf.int32, size=max_length)
 
     for i in tf.range(max_length):
         # Extract values within the interval
@@ -1375,7 +1387,7 @@ def extend_tensor(tensor, tensor_length, max_length):
     Extend the input tensor to max_length by linear interpolation.
     """
     num_points_to_add = tf.cast(tf.math.ceil((max_length - tensor_length) / (tensor_length - 1)), tf.int32)
-    extended_tensor = tf.TensorArray(dtype=tf.int32, size=0, dynamic_size=True)
+    extended_tensor = tf.TensorArray(dtype=tf.int32, size=100, dynamic_size=True)
 
     for i in tf.range(tensor_length - 1):
         p1 = tensor[i]
@@ -1411,14 +1423,18 @@ def extend_tensor(tensor, tensor_length, max_length):
 
 def find_contours_wrapper(mask):
     # if empty mask, return empty array
-    if ~mask.any():
-        return np.array([[0, 0]], dtype=np.float32)
+    if ~mask.any() or (mask.size == 0):
+        return np.zeros((100, 2), dtype=np.float32)
 
     # Pad to ensure proper polygons for masks that touch image edges.
     padded_mask = np.zeros(
         (mask.shape[0] + 2, mask.shape[1] + 2), dtype=np.uint8)
     padded_mask[1:-1, 1:-1] = mask
     contours = find_contours(padded_mask, 0.5)[0]
+
+    # Check if contours exist, if not, return an empty array
+    if len(contours) == 0:
+        return np.zeros((100, 2), dtype=np.float32)
     return np.array(contours, dtype=np.float32)  # output as numpy array
 
 
@@ -1426,28 +1442,81 @@ def mask2polygon(mask_element):
     def case_one():
         poly = tf.numpy_function(find_contours_wrapper, [mask_element], tf.float32)
         poly = tf.cast(poly, tf.int32)
-        poly_capped = process_tensor_to_same_length(poly)
-        poly_xy = tf.reverse(poly_capped, axis=[1])  # yx to xy
-        return poly_xy
+
+        case = tf.equal(tf.shape(poly)[0], 100)
+        poly_capped = tf.cond(case,
+                              lambda: poly,
+                              lambda: process_tensor_to_same_length(poly, 100))
+
+        return poly_capped
 
     def case_two():
-        return tf.zeros(shape=[0, 2], dtype=tf.int32)
+        return tf.zeros(shape=[100, 2], dtype=tf.int32)
 
     # mask_element = tf.cast(mask_element, tf.bool)
-    result = tf.cond(tf.greater(tf.shape(mask_element)[0], 0), case_one, case_two)
+    result = tf.cond(tf.greater(tf.size(mask_element), 0), case_one, case_two)
+    # result = tf.cond(tf.greater(tf.shape(mask_element)[0], 0), case_one, case_two)
     return result
 
 
 # Calculate boundary score
+# def calc_bdry_score(args):
+#     polygon_true, polygon_pred = args
+#
+#     # search for the cloest point
+#     diff = polygon_pred[:, tf.newaxis, :] - polygon_true[tf.newaxis, :, :]
+#     diff = tf.cast(diff, tf.float32)
+#     all_dist = tf.sqrt(tf.reduce_sum(tf.square(diff), axis=-1))
+#     min_dist = tf.reduce_min(all_dist, axis=1)  # [num_points]
+#     bdry_score = tf.reduce_mean(min_dist) / tf.cast(tf.shape(min_dist)[0], tf.float32)
+#     return bdry_score
+
+
 def calc_bdry_score(args):
     polygon_true, polygon_pred = args
 
-    # search for the cloest point
+    # # search for the closet point
+    # diff = polygon_pred[:, tf.newaxis, :] - polygon_true[tf.newaxis, :, :]
+    # diff = tf.cast(diff, tf.float32)
+    # all_dist = tf.sqrt(tf.reduce_sum(tf.square(diff), axis=-1))
+    # min_dist = tf.reduce_min(all_dist, axis=1)  # [num_points]
+    # bdry_score = tf.reduce_mean(min_dist) / tf.cast(tf.shape(min_dist)[0], tf.float32)
+
+    # def pad_polygon_true():
+    #     size_diff = tf.subtract(tf.shape(polygon_pred)[0], tf.shape(polygon_true)[0])
+    #     return tf.pad(polygon_true, [[0, size_diff], [0, 0]], "CONSTANT")
+    #
+    # def pad_polygon_pred():
+    #     size_diff = tf.subtract(tf.shape(polygon_true)[0], tf.shape(polygon_pred)[0])
+    #     return tf.pad(polygon_pred, [[0, size_diff], [0, 0]], "CONSTANT")
+    #
+    # # pad the smaller polygon
+    # polygon_true = tf.cond(tf.less(tf.shape(polygon_true)[0], tf.shape(polygon_pred)[0]), pad_polygon_true,
+    #                        lambda: polygon_true)
+    # polygon_pred = tf.cond(tf.less(tf.shape(polygon_pred)[0], tf.shape(polygon_true)[0]), pad_polygon_pred,
+    #                        lambda: polygon_pred)
+
+    # calculate the difference between polygons
+    diff = tf.subtract(tf.expand_dims(polygon_pred, 1), tf.expand_dims(polygon_true, 0))
     diff = polygon_pred[:, tf.newaxis, :] - polygon_true[tf.newaxis, :, :]
     diff = tf.cast(diff, tf.float32)
+
+    # calculate all distances
     all_dist = tf.sqrt(tf.reduce_sum(tf.square(diff), axis=-1))
-    min_dist = tf.reduce_min(all_dist, axis=1)  # [num_points]
-    bdry_score = tf.reduce_mean(min_dist) / tf.cast(tf.shape(min_dist)[0], tf.float32)
+
+    # find the minimum distance
+    min_dist = tf.reduce_min(all_dist, axis=0)
+    # average the minimum distances
+    avg_dist = tf.reduce_mean(min_dist)
+
+    # compute the maximum possible distance to normalize score
+    max_distance = tf.sqrt(tf.cast(tf.reduce_sum(tf.square(tf.shape(polygon_true))), tf.float32))
+    max_distance = tf.reduce_max(min_dist)
+
+    # normalize the average minimum distance to get a score between 0 and 1
+    # bdry_score = tf.subtract(1.0, tf.divide(avg_dist, max_distance))
+    bdry_score = tf.divide(1.0, tf.add(avg_dist, 1.0))
+
     return bdry_score
 
 
