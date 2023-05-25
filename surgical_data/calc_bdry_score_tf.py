@@ -24,6 +24,7 @@ import surgical
 ROOT_DIR = os.path.abspath("../")
 sys.path.append(ROOT_DIR)  # To find local version of the library
 from mrcnn.utils import expand_mask, resize_image, minimize_mask, extract_bboxes
+
 matplotlib.use('TkAgg')
 
 dataset_dir = '../../datasets/3dStool'
@@ -82,7 +83,7 @@ for i in range(N):
     else:
         print('empty', i)
         mask_pred.append(np.zeros_like(gt_mask, dtype=np.bool))
-        # mask_pred.append(np.array([]))
+        # mask_pred.append(np.array([], dtype=np.bool))
 
     # mask_true.append(np.zeros_like(gt_mask, dtype=np.bool))
     pre = gt_mask.copy()
@@ -127,21 +128,17 @@ def cap_tensor(tensor, max_length, ratio):
     """
     # Calculate the indices corresponding to the intervals
     indices = tf.range(max_length, dtype=tf.float32) * ratio
-    indices = tf.cast(tf.round(indices), tf.int32)
 
-    indices, _ = tf.unique(indices)  # remove duplicates
-
-    starts = tf.concat([[0], indices[:-1]], axis=0)
-    ends = indices
+    lower = tf.cast(tf.math.floor(indices), tf.int32)  # Always round down
+    upper = tf.cast(tf.math.ceil(indices), tf.int32)  # Always round up
 
     # Initialize an empty TensorArray to store the averaged values
     averaged_tensor = tf.TensorArray(dtype=tf.int32, size=max_length)
 
     for i in tf.range(max_length):
         # Extract values within the interval
-        interval = tensor[starts[i]:ends[i], :]
-        # Compute average
-        avg_value = tf.reduce_mean(interval, axis=0)
+        avg_value = tf.reduce_mean([tensor[lower[i], :], tensor[upper[i], :]], axis=0)
+
         averaged_tensor = averaged_tensor.write(i, avg_value)
 
     return averaged_tensor.stack()
@@ -164,7 +161,6 @@ def extend_tensor(tensor, tensor_length, max_length):
 
         for j in tf.range(num_points_to_add + 1):
             extended_tensor = extended_tensor.write(extended_tensor.size(), tf.cast(new_points[j], tf.int32))
-            # extended_tensor = extended_tensor.write(extended_tensor.size()-1, tf.constant([0, 0]))
 
     # Add the last point
     extended_tensor = extended_tensor.write(extended_tensor.size(), tensor[-1])
@@ -230,52 +226,41 @@ def mask2polygon(mask_element):
 def calc_bdry_score(args):
     polygon_true, polygon_pred = args
 
-    # # search for the closet point
-    # diff = polygon_pred[:, tf.newaxis, :] - polygon_true[tf.newaxis, :, :]
-    # diff = tf.cast(diff, tf.float32)
-    # all_dist = tf.sqrt(tf.reduce_sum(tf.square(diff), axis=-1))
-    # min_dist = tf.reduce_min(all_dist, axis=1)  # [num_points]
-    # bdry_score = tf.reduce_mean(min_dist) / tf.cast(tf.shape(min_dist)[0], tf.float32)
+    def _calc_score():
+        # calculate the difference between polygons
+        diff = polygon_pred[:, tf.newaxis, :] - polygon_true[tf.newaxis, :, :]
+        diff = tf.cast(diff, tf.float32)
 
-    # def pad_polygon_true():
-    #     size_diff = tf.subtract(tf.shape(polygon_pred)[0], tf.shape(polygon_true)[0])
-    #     return tf.pad(polygon_true, [[0, size_diff], [0, 0]], "CONSTANT")
-    #
-    # def pad_polygon_pred():
-    #     size_diff = tf.subtract(tf.shape(polygon_true)[0], tf.shape(polygon_pred)[0])
-    #     return tf.pad(polygon_pred, [[0, size_diff], [0, 0]], "CONSTANT")
-    #
-    # # pad the smaller polygon
-    # polygon_true = tf.cond(tf.less(tf.shape(polygon_true)[0], tf.shape(polygon_pred)[0]), pad_polygon_true,
-    #                        lambda: polygon_true)
-    # polygon_pred = tf.cond(tf.less(tf.shape(polygon_pred)[0], tf.shape(polygon_true)[0]), pad_polygon_pred,
-    #                        lambda: polygon_pred)
+        # calculate all distances
+        all_dist = tf.sqrt(tf.reduce_sum(tf.square(diff), axis=-1))
 
-    # calculate the difference between polygons
-    diff = tf.subtract(tf.expand_dims(polygon_pred, 1), tf.expand_dims(polygon_true, 0))
-    diff = polygon_pred[:, tf.newaxis, :] - polygon_true[tf.newaxis, :, :]
-    diff = tf.cast(diff, tf.float32)
+        # find the minimum distance
+        min_dist = tf.reduce_min(all_dist, axis=0)
 
-    # calculate all distances
-    all_dist = tf.sqrt(tf.reduce_sum(tf.square(diff), axis=-1))
+        # average the minimum distances
+        avg_dist = tf.reduce_mean(min_dist)
 
-    # find the minimum distance
-    min_dist = tf.reduce_min(all_dist, axis=0)
-    # if axis=1: correct for wrong, incorrect for empty (1)
-    # if axis=0: both seems okay
+        # normalize the average minimum distance to get a score between 0 and 1
+        bdry_score = tf.divide(1.0, tf.add(avg_dist, 1.0))
 
-    # average the minimum distances
-    avg_dist = tf.reduce_mean(min_dist)
+        return bdry_score
 
-    # compute the maximum possible distance to normalize score
-    max_distance = tf.sqrt(tf.cast(tf.reduce_sum(tf.square(tf.shape(polygon_true))), tf.float32))
-    max_distance = tf.reduce_max(min_dist)
-
-    # normalize the average minimum distance to get a score between 0 and 1
-    # bdry_score = tf.subtract(1.0, tf.divide(avg_dist, max_distance))
-    bdry_score = tf.divide(1.0, tf.add(avg_dist, 1.0))
-
-    # bdry_score = tf.cond(tf.reduce_any(bdry_score), lambda: 0.0, lambda: bdry_score)
+    # sometimes the polygons are empty after find_contours()
+    def _check_all_zero(tensor):
+        return tf.reduce_all(tf.equal(tensor, 0))
+    both_empty = tf.logical_and(_check_all_zero(polygon_true),
+                                _check_all_zero(polygon_pred))
+    either_empty = tf.logical_or(_check_all_zero(polygon_true),
+                                 _check_all_zero(polygon_pred))
+    bdry_score = tf.cond(
+        both_empty,
+        lambda: 1.0,
+        lambda: tf.cond(
+            either_empty,
+            lambda: 0.0,
+            lambda: _calc_score()
+        )
+    )
     return bdry_score
 
 
@@ -295,6 +280,30 @@ polygons_true = tf.map_fn(mask2polygon, a, dtype=tf.int32)
 polygons_pred = tf.map_fn(mask2polygon, mask_pred_ph, dtype=tf.int32)
 bdry_score = tf.map_fn(calc_bdry_score, (polygons_true, polygons_pred), dtype=tf.float32)
 
+
+# input_pred = mask_pred_ph
+# input_true = a
+#
+#
+# def _calc_score(pred, true):
+#     polygons_pred = tf.map_fn(mask2polygon, pred, dtype=tf.int32)
+#     polygons_true = tf.map_fn(mask2polygon, true, dtype=tf.int32)
+#     bdry_score = tf.map_fn(calc_bdry_score, (polygons_true, polygons_pred), dtype=tf.float32)
+#     return bdry_score, polygons_true, polygons_pred
+#
+#
+# both_empty = tf.logical_and(tf.equal(tf.size(input_true), 0), tf.equal(tf.size(input_pred), 0))
+# either_empty = tf.logical_or(tf.equal(tf.size(input_true), 0), tf.equal(tf.size(input_pred), 0))
+# bdry_score, polygons_true, polygons_pred = tf.cond(
+#     both_empty,
+#     lambda: (tf.constant(1.0), tf.zeros(shape=[100, 2], dtype=tf.int32), tf.zeros(shape=[100, 2], dtype=tf.int32)),
+#     lambda: tf.cond(
+#         either_empty,
+#         lambda: (tf.constant(0.0), tf.zeros(shape=[100, 2], dtype=tf.int32), tf.zeros(shape=[100, 2], dtype=tf.int32)),
+#         lambda: _calc_score(input_pred, input_true)
+#     )
+# )
+
 # Run graph
 with tf.Session() as sess:
     output_tensors = [bdry_score, polygons_true, polygons_pred]
@@ -303,7 +312,7 @@ with tf.Session() as sess:
 
     bdry_score_output, polygons_true_output, polygons_pred_output = output_data
 
-# testing:
+# # testing:
 # for i in range(len(polygons_true_output)):
 #     # image = skimage.io.imread(os.path.join(image_dir, file_names[i]))
 #     image = skimage.io.imread(file_names[i])
