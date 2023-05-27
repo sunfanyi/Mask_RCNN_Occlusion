@@ -124,7 +124,7 @@ def process_tensor_to_same_length(tensor, max_length=100):
 @tf.function
 def cap_tensor(tensor, max_length, ratio):
     """
-    Cap the input tensor to max_length by averaging the values in each interval
+    Cap the input tensor to max_length by searching two nearest values and averaging them
     """
     # Calculate the indices corresponding to the intervals
     indices = tf.range(max_length, dtype=tf.float32) * ratio

@@ -653,6 +653,18 @@ def trim_zeros(x):
     return x[~np.all(x == 0, axis=1)]
 
 
+def calculate_dice_coefficient(gt_mask, pred_mask, smooth=0.00001):
+    y_true = (gt_mask.astype(np.float64)).flatten()
+
+    y_pred = pred_mask.astype(np.float64).flatten()
+
+    intersection = np.sum(y_true * y_pred)
+
+    dice = (2. * intersection + smooth) / (np.sum(y_true) + np.sum(y_pred) + smooth)
+
+    return dice
+
+
 def compute_matches(gt_boxes, gt_class_ids, gt_masks,
                     pred_boxes, pred_class_ids, pred_scores, pred_masks,
                     iou_threshold=0.5, score_threshold=0.0):
@@ -680,6 +692,7 @@ def compute_matches(gt_boxes, gt_class_ids, gt_masks,
 
     # Compute IoU overlaps [pred_masks, gt_masks]
     overlaps = compute_overlaps_masks(pred_masks, gt_masks)
+    # overlaps = calculate_dice_coefficient(pred_masks, gt_masks)
 
     # Loop through predictions and find matching ground truth boxes
     match_count = 0
@@ -714,7 +727,7 @@ def compute_matches(gt_boxes, gt_class_ids, gt_masks,
 
 def compute_ap(gt_boxes, gt_class_ids, gt_masks,
                pred_boxes, pred_class_ids, pred_scores, pred_masks,
-               iou_threshold=0.5):
+               iou_threshold=0.5, return_match=False):
     """Compute Average Precision at a set IoU threshold (default 0.5).
 
     Returns:
@@ -748,7 +761,10 @@ def compute_ap(gt_boxes, gt_class_ids, gt_masks,
     mAP = np.sum((recalls[indices] - recalls[indices - 1]) *
                  precisions[indices])
 
-    return mAP, precisions, recalls, overlaps
+    if return_match:
+        return mAP, precisions, recalls, overlaps, gt_match
+    else:
+        return mAP, precisions, recalls, overlaps
 
 
 def compute_ap_range(gt_box, gt_class_id, gt_mask,
