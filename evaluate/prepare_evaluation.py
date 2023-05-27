@@ -1,42 +1,12 @@
 import os
 import sys
-import math
 import tensorflow as tf
-import matplotlib.pyplot as plt
 
 ROOT_DIR = os.path.abspath("../")
 sys.path.insert(0, ROOT_DIR)
 
 DEVICE = "/gpu:0"  # /cpu:0 or /gpu:0
 MODEL_DIR = os.path.join(ROOT_DIR, "logs")
-
-def search_image_ids(dataset, target_ids):
-    image_ids = []
-    for target_id in target_ids:
-        source = 'occlusion.' + target_id
-        image_ids.append(dataset.image_from_source_map[source])
-        # for i in range(len(dataset.image_info)):
-        #     if dataset.image_info[i]['id'] == target_id:
-        #         image_ids.append(i)
-        #         break
-    return image_ids
-
-
-def get_ax(num_images, size=6):
-    if num_images <= 3:
-        nrows, ncols = 1, num_images
-    elif num_images <= 4:
-        nrows, ncols = 2, 2
-    elif num_images <= 6:
-        nrows, ncols = 2, 3
-    elif num_images <= 9:
-        nrows, ncols = 3, 3
-    else:
-        nrows = math.ceil(num_images / 4)
-        ncols = 4
-
-    fig, axes = plt.subplots(nrows, ncols, figsize=(size * ncols, size * nrows))
-    return fig, axes
 
 
 def prepare_dataset_config(dataset, subset):

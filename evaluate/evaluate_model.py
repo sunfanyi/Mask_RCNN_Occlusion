@@ -1,11 +1,11 @@
 #%%
 import time
 import random
-import pandas as pd
-import numpy as np
 import matplotlib
 
 from prepare_evaluation import *
+from tools_evaluation import *
+from calc_bdry_score_tf import run_graph
 
 ROOT_DIR = os.path.abspath("../")
 sys.path.insert(0, ROOT_DIR)
@@ -14,17 +14,18 @@ import mrcnn.model as modellib
 from mrcnn import utils
 
 subset = 'test'
-dataset = 'occluded'
-# dataset = 'surgical'
 
 all_model_paths = [
-    r"D:\Users\ROG\Desktop\FYP\Mask_RCNN-Occulusion\logs\_train_021_occ_raw_100_m351\mask_rcnn_occlusion_0100.h5",
+    # r"D:\Users\ROG\Desktop\FYP\Mask_RCNN-Occulusion\logs\_train_019_sur_raw_120\mask_rcnn_surgical_0120.h5",
     # r"D:\Users\ROG\Desktop\FYP\Mask_RCNN-Occulusion\logs\_train_020_sur_bdry_120\mask_rcnn_surgical_0120.h5",
+    r"D:\Users\ROG\Desktop\FYP\Mask_RCNN-Occulusion\logs\_train_025_occ_raw_120_m351\mask_rcnn_occlusion_0120.h5",
+    r"D:\Users\ROG\Desktop\FYP\Mask_RCNN-Occulusion\logs\_train_026_occ_bdry_120_m351\mask_rcnn_occlusion_0120.h5",
 ]
 model_names = [
     '015_original_100',
-    # '016_modified_100',
+    '016_modified_100',
 ]
+dataset = 'surgical' if 'sur' in all_model_paths[0] else 'occluded'
 num_models = len(all_model_paths)
 
 config, dataset = prepare_dataset_config(dataset, subset)
@@ -49,7 +50,7 @@ start = time.time()
 #     ]
 # img_ids = search_image_ids(dataset, img_names)
 
-img_ids = dataset.image_ids[:10]
+img_ids = np.random.choice(dataset.image_ids, 1)
 
 all_imgs = []
 all_gt = []
@@ -66,9 +67,6 @@ for image_id in img_ids:
     for i in range(num_models):
         _detected = all_models[i].detect([image], verbose=0)[0]
         all_predictions[model_names[i]].append(_detected)
-    # # detect first 10 images
-    # if len(all_predictions[model_names[0]]) == 10:
-    #     break
 
 
 end = time.time()
@@ -78,229 +76,80 @@ print("Time taken: ", end - start)
 
 #%% Evaluation
 
-def compute_overlaps_masks(masks1, masks2):
-    """Computes IoU overlaps between two sets of masks.
-    masks1, masks2: [Height, Width, instances]
-    """
-
-    # If either set of masks is empty return empty result
-    if masks1.shape[-1] == 0 or masks2.shape[-1] == 0:
-        return np.zeros((masks1.shape[-1], masks2.shape[-1]))
-    # flatten masks and compute their areas
-    masks1 = np.reshape(masks1 > .5, (-1, masks1.shape[-1])).astype(np.float32)
-    masks2 = np.reshape(masks2 > .5, (-1, masks2.shape[-1])).astype(np.float32)
-    area1 = np.sum(masks1, axis=0)
-    area2 = np.sum(masks2, axis=0)
-
-    # intersections and union
-    intersections = np.dot(masks1.T, masks2)
-    union = area1[:, None] + area2[None, :] - intersections
-    overlaps = intersections / union
-
-    return overlaps
-
-
-def calculate_dice_coefficient(masks1, masks2, smooth=0.00001):
-    # If either set of masks is empty return empty result
-    if masks1.shape[-1] == 0 or masks2.shape[-1] == 0:
-        return np.zeros((masks1.shape[-1], masks2.shape[-1]))
-    # flatten masks and compute their areas
-    masks1 = np.reshape(masks1 > .5, (-1, masks1.shape[-1])).astype(np.float32)
-    masks2 = np.reshape(masks2 > .5, (-1, masks2.shape[-1])).astype(np.float32)
-    area1 = np.sum(masks1, axis=0)
-    area2 = np.sum(masks2, axis=0)
-
-    # intersections and union
-    intersections = np.dot(masks1.T, masks2)
-
-    dice = (2. * intersections + smooth) / (area1 + area2 + smooth)
-
-    return dice
-
-
-def compute_ap(gt_boxes, gt_class_ids, gt_masks,
-               pred_boxes, pred_class_ids, pred_scores, pred_masks,
-               iou_threshold=0.5, return_match=False):
-    """Compute Average Precision at a set IoU threshold (default 0.5).
-
-    Returns:
-    mAP: Mean Average Precision
-    precisions: List of precisions at different class score thresholds.
-    recalls: List of recall values at different class score thresholds.
-    overlaps: [pred_boxes, gt_boxes] IoU overlaps.
-    """
-    # Get matches and overlaps
-    gt_match, pred_match, overlaps = compute_matches(
-        gt_boxes, gt_class_ids, gt_masks,
-        pred_boxes, pred_class_ids, pred_scores, pred_masks,
-        iou_threshold)
-
-    # Compute precision and recall at each prediction box step
-    precisions = np.cumsum(pred_match > -1) / (np.arange(len(pred_match)) + 1)
-    recalls = np.cumsum(pred_match > -1).astype(np.float32) / len(gt_match)
-
-    # Pad with start and end values to simplify the math
-    precisions = np.concatenate([[0], precisions, [0]])
-    recalls = np.concatenate([[0], recalls, [1]])
-
-    # Ensure precision values decrease but don't increase. This way, the
-    # precision value at each recall threshold is the maximum it can be
-    # for all following recall thresholds, as specified by the VOC paper.
-    for i in range(len(precisions) - 2, -1, -1):
-        precisions[i] = np.maximum(precisions[i], precisions[i + 1])
-
-    # Compute mean AP over recall range
-    indices = np.where(recalls[:-1] != recalls[1:])[0] + 1
-    mAP = np.sum((recalls[indices] - recalls[indices - 1]) *
-                 precisions[indices])
-
-    if return_match:
-        return mAP, precisions, recalls, overlaps, gt_match
-    else:
-        return mAP, precisions, recalls, overlaps
-
-
-def compute_matches(gt_boxes, gt_class_ids, gt_masks,
-                    pred_boxes, pred_class_ids, pred_scores, pred_masks,
-                    iou_threshold=0.5, score_threshold=0.0):
-    """Finds matches between prediction and ground truth instances.
-
-    Returns:
-        gt_match: 1-D array. For each GT box it has the index of the matched
-                  predicted box.
-        pred_match: 1-D array. For each predicted box, it has the index of
-                    the matched ground truth box.
-        overlaps: [pred_boxes, gt_boxes] IoU overlaps.
-    """
-    # Trim zero padding
-    # TODO: cleaner to do zero unpadding upstream
-    gt_boxes = trim_zeros(gt_boxes)
-    gt_masks = gt_masks[..., :gt_boxes.shape[0]]
-    pred_boxes = trim_zeros(pred_boxes)
-    pred_scores = pred_scores[:pred_boxes.shape[0]]
-    # Sort predictions by score from high to low
-    indices = np.argsort(pred_scores)[::-1]
-    pred_boxes = pred_boxes[indices]
-    pred_class_ids = pred_class_ids[indices]
-    pred_scores = pred_scores[indices]
-    pred_masks = pred_masks[..., indices]
-
-    # Compute IoU overlaps [pred_masks, gt_masks]
-    # overlaps = compute_overlaps_masks(pred_masks, gt_masks)
-    overlaps = calculate_dice_coefficient(pred_masks, gt_masks)
-
-    # Loop through predictions and find matching ground truth boxes
-    match_count = 0
-    pred_match = -1 * np.ones([pred_boxes.shape[0]])
-    gt_match = -1 * np.ones([gt_boxes.shape[0]])
-    for i in range(len(pred_boxes)):
-        # Find best matching ground truth box
-        # 1. Sort matches by score
-        sorted_ixs = np.argsort(overlaps[i])[::-1]
-        # 2. Remove low scores
-        low_score_idx = np.where(overlaps[i, sorted_ixs] < score_threshold)[0]
-        if low_score_idx.size > 0:
-            sorted_ixs = sorted_ixs[:low_score_idx[0]]
-        # 3. Find the match
-        for j in sorted_ixs:
-            # If ground truth box is already matched, go to next one
-            if gt_match[j] > -1:
-                continue
-            # If we reach IoU smaller than the threshold, end the loop
-            iou = overlaps[i, j]
-            if iou < iou_threshold:
-                break
-            # Do we have a match?
-            if pred_class_ids[i] == gt_class_ids[j]:
-                match_count += 1
-                gt_match[j] = i
-                pred_match[i] = j
-                break
-
-    return gt_match, pred_match, overlaps
-
-
-
-
-def trim_zeros(x):
-    """It's common to have tensors larger than the available data and
-    pad with zeros. This function removes rows that are all zeros.
-
-    x: [rows, columns].
-    """
-    assert len(x.shape) == 2
-    return x[~np.all(x == 0, axis=1)]
-
-
 img_names = [dataset.image_info[i]['id'] for i in img_ids]
 
 # img_ids = [30]
 # img_names = [dataset.image_info[i]['id'] for i in img_ids]
 
+df_iou = pd.DataFrame(columns=['id (iou)', 'images']+model_names)
+df_dice = pd.DataFrame(columns=['id (dice)', 'images']+model_names)
+df_ap = pd.DataFrame(columns=['id (ap)', 'images']+model_names)
 
-def get_matched_iou(iou, gt_match):
+all_gt_masks = []
+all_pred_masks = {model_names[i]: [] for i in range(num_models)}
+
+
+def get_matched_mask(mask, gt_match):
     gt_match = gt_match.astype(np.int32)
-    matched_iou = np.ndarray([len(gt_match)], dtype=np.float32)
+    matched_iou = np.ndarray([len(gt_match), mask.shape[0], mask.shape[1]], dtype=np.bool)
     for i in range(len(gt_match)):
-        match_iou = iou[gt_match[i], i] if gt_match[i] != -1 else np.nan
+        match_iou = mask[:, :, gt_match[i]] if \
+            gt_match[i] != -1 else np.zeros_like(mask[:, :, 0], dtype=np.bool)
         matched_iou[i] = match_iou
     return matched_iou
 
 
-df_iou = pd.DataFrame(columns=['id (iou)', 'images']+model_names)
-df_ap = pd.DataFrame(columns=['id (ap)', 'images']+model_names)
+for i in range(len(img_ids)):
+    id = img_ids[i]
+    name = img_names[i]
 
-for id, name in zip(img_ids, img_names):
-    gt = all_gt[id]
+    gt = all_gt[i]
+    all_gt_masks.extend(gt['masks'][:, :, i]
+                        for i in range(gt['masks'].shape[-1]))
+    num_ROIs = gt['rois'].shape[0]
 
     ious = []  # each element is a list of ious for each model
+    dices = []  # each element is a list of ious for each model
     aps = []  # each element is a value of ap for each model
-    for i in range(num_models):
-        r = all_predictions[model_names[i]][id]
-        # gt_match, _, iou = utils.compute_matches(
-        #     gt['rois'], gt['class_ids'], gt['masks'],
-        #     r['rois'], r['class_ids'], r['scores'], r['masks'])
-        AP, precisions, recalls, iou, gt_match =\
-            compute_ap(gt['rois'], gt['class_ids'], gt['masks'],
-                             r['rois'], r['class_ids'], r['scores'], r['masks'],
-                             return_match=True)
+    for model_name in model_names:
+        r = all_predictions[model_name][i]
+        gt_match, pred_match, iou, dice = compute_matches(
+            gt['rois'], gt['class_ids'], gt['masks'],
+            r['rois'], r['class_ids'], r['scores'], r['masks'])
+        AP, precisions, recalls = compute_ap(gt_match, pred_match)
         iou = get_matched_iou(iou, gt_match)
+        dice = get_matched_iou(dice, gt_match)
+        masks = get_matched_mask(r['masks'], gt_match)
+
         ious.append(iou)
+        dices.append(dice)
         aps.append(AP)
 
-    num_ROIs = gt['rois'].shape[0]
-    print(num_ROIs)
-    iou_data = [[id, name] + [ious[i][j] for i in range(num_models)]
-                for j in range(num_ROIs)]
-    ap_data = [id, name] + [aps[i] for i in range(num_models)]
+        all_pred_masks[model_name].extend(masks[j, :, :]
+                                          for j in range(masks.shape[0]))
 
-    df_ap.loc[len(df_ap)] = ap_data
+    df_ap.loc[len(df_ap)] = [id, name] + aps
 
-    for iou in iou_data:
-        df_iou.loc[len(df_iou)] = iou
+    ious = np.array(ious)
+    dices = np.array(dices)
+    for roi in range(num_ROIs):
+        df_iou.loc[len(df_iou)] = [id, name] + ious[:, roi].tolist()
+        df_dice.loc[len(df_dice)] = [id, name] + dices[:, roi].tolist()
 
+# Compute bdry_score
+bdrys = []
+for i in range(num_models):
+    bdry = run_graph(all_gt_masks, all_pred_masks[model_names[i]])[0]
+    bdrys.append(bdry)
 
-
-
-
-
-
-
-
-
-def get_averaged_df(df):
-    avg = df.iloc[:, 2:].mean(skipna=True)
-    # avg = df.fillna(0).mean(skipna=True)
-    avg_df = pd.DataFrame(columns=df.columns)
-    avg_df.loc[0] = ['average', 'average'] + avg.tolist()
-
-    averaged_df = pd.concat([avg_df, df]).reset_index(drop=True)
-    averaged_df.to_csv(sys.stdout, sep='\t', index=False)
-    return averaged_df
-
+bdrys = np.array(bdrys)
+df_bdry = df_iou.copy()
+df_bdry.iloc[:, 2:] = bdrys
 
 df_iou = get_averaged_df(df_iou)
+df_dice = get_averaged_df(df_dice)
 df_ap = get_averaged_df(df_ap)
+df_bdry = get_averaged_df(df_bdry)
 
 #%% Visualize
 matplotlib.use('TkAgg')
@@ -316,29 +165,32 @@ matplotlib.use('TkAgg')
 # ids_to_show = search_image_ids(dataset, names_to_show)
 
 # random 5 images
-# ids_to_show = np.random.choice(img_ids, 5)
-ids_to_show = [0, 1, 2]
+ids_to_show = np.random.choice(img_ids, 1, replace=False)
+# ids_to_show = [317]
 names_to_show = [dataset.image_info[i]['id'] for i in ids_to_show]
 
 plt.close('all')
-for id, name in zip(ids_to_show, names_to_show):
-    fig, axes = get_ax(num_models+1)
-    gt = all_gt[id]
+for i in range(len(ids_to_show)):
+    id = ids_to_show[i]
+    name = names_to_show[i]
 
-    for i in range(num_models):
-        r = all_predictions[model_names[i]][id]
+    fig, axes = get_ax(num_models+1)
+    gt = all_gt[i]
+
+    for j in range(num_models):
+        r = all_predictions[model_names[j]][i]
         gt_match, pred_match, iou = utils.compute_matches(
             gt['rois'], gt['class_ids'], gt['masks'],
             r['rois'], r['class_ids'], r['scores'], r['masks'])
         iou = get_matched_iou(iou, gt_match)
         score_to_show = [iou[_] if _ != -1 else np.nan
                             for _ in pred_match.astype(np.int32)]
-        visualize.display_instances(all_imgs[id], r['rois'], r['masks'], r['class_ids'],
-                                    dataset.class_names, score_to_show, ax=axes[i],
-                                    title=model_names[i])
+        visualize.display_instances(all_imgs[i], r['rois'], r['masks'], r['class_ids'],
+                                    dataset.class_names, score_to_show, ax=axes[j],
+                                    title=model_names[j])
 
     # ground truth
-    visualize.display_instances(all_imgs[id], gt['rois'], gt['masks'], gt['class_ids'],
+    visualize.display_instances(all_imgs[i], gt['rois'], gt['masks'], gt['class_ids'],
                                 dataset.class_names, ax=axes[-1],
                                 title="GT")
 

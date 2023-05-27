@@ -19,88 +19,10 @@ import matplotlib
 import matplotlib.pyplot as plt
 import skimage.io
 
-import surgical
-
 ROOT_DIR = os.path.abspath("../")
 sys.path.append(ROOT_DIR)  # To find local version of the library
 from mrcnn.utils import expand_mask, resize_image, minimize_mask, extract_bboxes
 
-matplotlib.use('TkAgg')
-
-dataset_dir = '../../datasets/3dStool'
-path = os.path.join(dataset_dir, 'train', 'manual_json', 'surgical_tool_train2020.json')
-image_dir = os.path.join(dataset_dir, 'train', 'surgical2020')
-raw_info = json.load(open(path))
-
-class_ids = None
-dataset_train = surgical.SurgicalDataset()
-sur = dataset_train.load_surgical(dataset_dir, "train", return_surgical=True,
-                                  class_ids=class_ids)
-dataset_train.prepare()
-image_info = dataset_train.image_info
-
-N = len(dataset_train.image_info)
-
-ids = dataset_train.image_ids
-file_names = [i['path'] for i in image_info]
-mask_true = []
-bbox_true = []
-mask_pred = []
-bbox_pred = []
-
-for i in range(N):
-    anno = image_info[i]['annotations'][0]
-    mask, class_ids = dataset_train.load_mask(ids[i])
-
-    # GT
-    bboxes = extract_bboxes(mask)
-    mask = minimize_mask(bboxes, mask, (56, 56))
-    # gt_mask = np.transpose(gt_mask, (2, 0, 1))
-
-    seg = mask.astype(np.float32)
-    # seg = np.expand_dims(seg, -1)
-    image_shape = (int(image_info[i]['height']), int(image_info[i]['width']))
-    # image_shape = (1024, 1024)
-    seg = expand_mask(bboxes, seg, image_shape)
-
-    bbox_true.append(bboxes[0])
-    mask_true.append(seg[:, :, 0])
-
-    # GT
-    gt_mask = seg[:, :, 0]
-    if i == 0:
-        pre = gt_mask.copy()
-
-    bbox_pred.append(bboxes[0])
-    if np.random.choice([True, False], p=[0.9, 0.1]):
-        if np.random.choice([True, False], p=[0.9, 0.1]):
-            # normal case
-            mask_pred.append(gt_mask)
-        else:
-            print('wrong', i)
-            # wrong value
-            mask_pred.append(pre)
-    else:
-        print('empty', i)
-        mask_pred.append(np.zeros_like(gt_mask, dtype=np.bool))
-        # mask_pred.append(np.array([], dtype=np.bool))
-
-    # mask_true.append(np.zeros_like(gt_mask, dtype=np.bool))
-    pre = gt_mask.copy()
-    # # predicted
-    # bbox = sample_info[i]['bbox_pred']
-    # bbox = np.expand_dims(bbox, 0).astype('int')
-    #
-    # seg = sample_info[i]['mask_pred']
-    # seg = np.expand_dims(seg, -1)
-    # image_shape = (int(sample_info[i]['height']), int(sample_info[i]['width']))
-    # seg = expand_mask(bbox, seg, image_shape)
-    #
-    # bbox_pred.append(bbox[0])
-    # mask_pred.append(seg[:, :, 0])
-
-    if i == 200:
-        break
 
 
 @tf.function
@@ -264,77 +186,149 @@ def calc_bdry_score(args):
     return bdry_score
 
 
-mask_true = np.array(mask_true, dtype=np.bool)
-mask_pred = np.array(mask_pred, dtype=np.bool)
+def run_graph(mask_true, mask_pred):
+    mask_true = np.array(mask_true, dtype=np.bool)
+    mask_pred = np.array(mask_pred, dtype=np.bool)
 
-mask_true_ph = tf.placeholder(tf.bool, shape=[None, None, None])
-mask_pred_ph = tf.placeholder(tf.bool, shape=[None, None, None])
+    mask_true_ph = tf.placeholder(tf.bool, shape=[None, None, None])
+    mask_pred_ph = tf.placeholder(tf.bool, shape=[None, None, None])
 
-a = tf.constant([], dtype=tf.bool)
-condition = tf.greater(tf.size(a), 0)
-a = tf.cond(condition,
-            lambda: a,
-            lambda: tf.zeros(shape=mask_pred.shape, dtype=tf.bool))
+    input_true = mask_true_ph
+    input_pred = mask_pred_ph
+    # a = tf.constant([], dtype=tf.bool)
+    # input_pred = a
 
-polygons_true = tf.map_fn(mask2polygon, a, dtype=tf.int32)
-polygons_pred = tf.map_fn(mask2polygon, mask_pred_ph, dtype=tf.int32)
-bdry_score = tf.map_fn(calc_bdry_score, (polygons_true, polygons_pred), dtype=tf.float32)
+    def _calc_score(pred, true):
+        polygons_pred = tf.map_fn(mask2polygon, pred, dtype=tf.int32)
+        polygons_true = tf.map_fn(mask2polygon, true, dtype=tf.int32)
+        bdry_score = tf.map_fn(calc_bdry_score,
+                               (polygons_true, polygons_pred), dtype=tf.float32)
+        return bdry_score, polygons_true, polygons_pred
 
+    both_empty = tf.logical_and(tf.equal(tf.size(input_true), 0),
+                                tf.equal(tf.size(input_pred), 0))
+    either_empty = tf.logical_or(tf.equal(tf.size(input_true), 0),
+                                 tf.equal(tf.size(input_pred), 0))
+    bdry_score, polygons_true, polygons_pred = tf.cond(
+        both_empty,
+        lambda: (tf.constant(1.0), tf.zeros(shape=[100, 2], dtype=tf.int32),
+                 tf.zeros(shape=[100, 2], dtype=tf.int32)),
+        lambda: tf.cond(
+            either_empty,
+            lambda: (tf.constant(0.0), tf.zeros(shape=[100, 2], dtype=tf.int32),
+                     tf.zeros(shape=[100, 2], dtype=tf.int32)),
+            lambda: _calc_score(input_pred, input_true)
+        )
+    )
 
-# input_pred = mask_pred_ph
-# input_true = a
-#
-#
-# def _calc_score(pred, true):
-#     polygons_pred = tf.map_fn(mask2polygon, pred, dtype=tf.int32)
-#     polygons_true = tf.map_fn(mask2polygon, true, dtype=tf.int32)
-#     bdry_score = tf.map_fn(calc_bdry_score, (polygons_true, polygons_pred), dtype=tf.float32)
-#     return bdry_score, polygons_true, polygons_pred
-#
-#
-# both_empty = tf.logical_and(tf.equal(tf.size(input_true), 0), tf.equal(tf.size(input_pred), 0))
-# either_empty = tf.logical_or(tf.equal(tf.size(input_true), 0), tf.equal(tf.size(input_pred), 0))
-# bdry_score, polygons_true, polygons_pred = tf.cond(
-#     both_empty,
-#     lambda: (tf.constant(1.0), tf.zeros(shape=[100, 2], dtype=tf.int32), tf.zeros(shape=[100, 2], dtype=tf.int32)),
-#     lambda: tf.cond(
-#         either_empty,
-#         lambda: (tf.constant(0.0), tf.zeros(shape=[100, 2], dtype=tf.int32), tf.zeros(shape=[100, 2], dtype=tf.int32)),
-#         lambda: _calc_score(input_pred, input_true)
-#     )
-# )
-
-# Run graph
-with tf.Session() as sess:
-    output_tensors = [bdry_score, polygons_true, polygons_pred]
-    output_data = sess.run(output_tensors, feed_dict={mask_true_ph: mask_true,
-                                                      mask_pred_ph: mask_pred})
+    # Run graph
+    config = tf.ConfigProto()
+    # config.log_device_placement = True
+    config.allow_soft_placement = True  # allow CPU if GPU is not available
+    with tf.Session(config=config) as sess:
+        output_tensors = [bdry_score, polygons_true, polygons_pred]
+        output_data = sess.run(output_tensors, feed_dict={mask_true_ph: mask_true,
+                                                          mask_pred_ph: mask_pred})
 
     bdry_score_output, polygons_true_output, polygons_pred_output = output_data
 
-# # testing:
-# for i in range(len(polygons_true_output)):
-#     # image = skimage.io.imread(os.path.join(image_dir, file_names[i]))
-#     image = skimage.io.imread(file_names[i])
-#     # image, _, _, _, _ = resize_image(image, min_dim=800, min_scale=0,
-#     #                                  max_dim=1024, mode='square')
-#
-#     # plot gt polygons
-#     fig, axes = plt.subplots(1, 2, figsize=(12, 6))
-#     # axes = get_ax(1, 2, size=6)
-#     axes[0].imshow(image)
-#     verts = polygons_true_output[i]
-#     xs, ys = zip(*verts)
-#     axes[0].scatter(xs, ys, c='r', s=1)
-#     axes[0].axis('off')
-#     axes[0].set_title('GT')
-#
-#     # plot predicted polygons
-#     axes[1].imshow(image)
-#     verts = polygons_pred_output[i]
-#     xs, ys = zip(*verts)
-#     axes[1].scatter(xs, ys, c='r', s=1)
-#     axes[1].axis('off')
-#     axes[1].set_title('Prediction')
-#     fig.suptitle('bdry_score = %.5f' % bdry_score_output[i])
-#     plt.show()
+    return bdry_score_output, polygons_true_output, polygons_pred_output
+
+
+if __name__ == '__main__':
+    # prepare data
+    from surgical_data import surgical
+
+    dataset_dir = '../../datasets/3dStool'
+    path = os.path.join(dataset_dir, 'train', 'manual_json', 'surgical_tool_train2020.json')
+    image_dir = os.path.join(dataset_dir, 'train', 'surgical2020')
+    raw_info = json.load(open(path))
+
+    class_ids = None
+    dataset_train = surgical.SurgicalDataset()
+    sur = dataset_train.load_surgical(dataset_dir, "train", return_surgical=True,
+                                      class_ids=class_ids)
+    dataset_train.prepare()
+    image_info = dataset_train.image_info
+
+    N = len(dataset_train.image_info)
+
+    ids = dataset_train.image_ids
+    file_names = [i['path'] for i in image_info]
+    mask_true = []
+    bbox_true = []
+    mask_pred = []
+    bbox_pred = []
+
+    for i in range(N):
+        anno = image_info[i]['annotations'][0]
+        mask, class_ids = dataset_train.load_mask(ids[i])
+
+        # GT
+        bboxes = extract_bboxes(mask)
+        mask = minimize_mask(bboxes, mask, (56, 56))
+        # gt_mask = np.transpose(gt_mask, (2, 0, 1))
+
+        seg = mask.astype(np.float32)
+        # seg = np.expand_dims(seg, -1)
+        image_shape = (int(image_info[i]['height']), int(image_info[i]['width']))
+        # image_shape = (1024, 1024)
+        seg = expand_mask(bboxes, seg, image_shape)
+
+        bbox_true.append(bboxes[0])
+        mask_true.append(seg[:, :, 0])
+
+        # GT
+        gt_mask = seg[:, :, 0]
+        if i == 0:
+            pre = gt_mask.copy()
+
+        bbox_pred.append(bboxes[0])
+        if np.random.choice([True, False], p=[0.9, 0.1]):
+            if np.random.choice([True, False], p=[0.9, 0.1]):
+                # normal case
+                mask_pred.append(gt_mask)
+            else:
+                print('wrong', i)
+                # wrong value
+                mask_pred.append(pre)
+        else:
+            print('empty', i)
+            mask_pred.append(np.zeros_like(gt_mask, dtype=np.bool))
+
+        pre = gt_mask.copy()
+
+        if i == 200:
+            break
+
+    # run graph
+    bdry_score_output, polygons_true_output, polygons_pred_output = \
+        run_graph(mask_true, mask_pred)
+
+    # # testing:
+    # matplotlib.use('TkAgg')
+    # for i in range(len(polygons_true_output)):
+    #     # image = skimage.io.imread(os.path.join(image_dir, file_names[i]))
+    #     image = skimage.io.imread(file_names[i])
+    #     # image, _, _, _, _ = resize_image(image, min_dim=800, min_scale=0,
+    #     #                                  max_dim=1024, mode='square')
+    #
+    #     # plot gt polygons
+    #     fig, axes = plt.subplots(1, 2, figsize=(12, 6))
+    #     # axes = get_ax(1, 2, size=6)
+    #     axes[0].imshow(image)
+    #     verts = polygons_true_output[i]
+    #     xs, ys = zip(*verts)
+    #     axes[0].scatter(xs, ys, c='r', s=1)
+    #     axes[0].axis('off')
+    #     axes[0].set_title('GT')
+    #
+    #     # plot predicted polygons
+    #     axes[1].imshow(image)
+    #     verts = polygons_pred_output[i]
+    #     xs, ys = zip(*verts)
+    #     axes[1].scatter(xs, ys, c='r', s=1)
+    #     axes[1].axis('off')
+    #     axes[1].set_title('Prediction')
+    #     fig.suptitle('bdry_score = %.5f' % bdry_score_output[i])
+    #     plt.show()

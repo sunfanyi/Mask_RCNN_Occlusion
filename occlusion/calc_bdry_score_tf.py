@@ -6,7 +6,7 @@
 # @Software: PyCharm
 
 """
-Testing the boundary score calculation using tensorflow
+Testing the boundary score calculation using tensorflow (depreciated)
 """
 
 import tensorflow as tf
@@ -21,47 +21,6 @@ import skimage.io
 ROOT_DIR = os.path.abspath("../")
 sys.path.append(ROOT_DIR)  # To find local version of the library
 from mrcnn.utils import expand_mask, resize_image
-
-image_dir = '../../datasets/dataset_occluded/images'
-
-sample_info = json.load(open('sample_mask_info.json', 'r'))
-N = len(sample_info)
-
-ids = [i['id'] for i in sample_info]
-file_names = [i['file_names'] for i in sample_info]
-mask_true = []
-bbox_true = []
-mask_pred = []
-bbox_pred = []
-
-
-for i in range(N):
-    # GT
-    bbox = sample_info[i]['bbox_true']
-    bbox = np.expand_dims(bbox, 0).astype('int')
-
-    seg = sample_info[i]['mask_true']
-    seg = np.expand_dims(seg, -1)
-    image_shape = (int(sample_info[i]['height']), int(sample_info[i]['width']))
-    seg = expand_mask(bbox, seg, image_shape)
-
-    bbox_true.append(bbox[0])
-    mask_true.append(seg[:, :, 0])
-
-    # predicted
-    bbox = sample_info[i]['bbox_pred']
-    bbox = np.expand_dims(bbox, 0).astype('int')
-
-    seg = sample_info[i]['mask_pred']
-    seg = np.expand_dims(seg, -1)
-    image_shape = (int(sample_info[i]['height']), int(sample_info[i]['width']))
-    seg = expand_mask(bbox, seg, image_shape)
-
-    bbox_pred.append(bbox[0])
-    mask_pred.append(seg[:, :, 0])
-
-    if i == 3:
-        break
 
 
 @tf.function
@@ -190,47 +149,95 @@ def calc_bdry_score(args):
     return bdry_score
 
 
-mask_true = np.array(mask_true, dtype=np.bool)
-mask_pred = np.array(mask_pred, dtype=np.bool)
+def run_graph(mask_true, mask_pred):
+    mask_true = np.array(mask_true, dtype=np.bool)
+    mask_pred = np.array(mask_pred, dtype=np.bool)
 
-mask_true_ph = tf.placeholder(tf.bool, shape=[None, None, None])
-mask_pred_ph = tf.placeholder(tf.bool, shape=[None, None, None])
+    mask_true_ph = tf.placeholder(tf.bool, shape=[None, None, None])
+    mask_pred_ph = tf.placeholder(tf.bool, shape=[None, None, None])
 
-polygons_true = tf.map_fn(mask2polygon, mask_true_ph, dtype=tf.int32)
-polygons_pred = tf.map_fn(mask2polygon, mask_pred_ph, dtype=tf.int32)
-bdry_score = tf.map_fn(calc_bdry_score, (polygons_true, polygons_pred), dtype=tf.float32)
+    polygons_true = tf.map_fn(mask2polygon, mask_true_ph, dtype=tf.int32)
+    polygons_pred = tf.map_fn(mask2polygon, mask_pred_ph, dtype=tf.int32)
+    bdry_score = tf.map_fn(calc_bdry_score, (polygons_true, polygons_pred), dtype=tf.float32)
 
-# Run graph
-with tf.Session() as sess:
-    output_tensors = [bdry_score, polygons_true, polygons_pred]
-    output_data = sess.run(output_tensors, feed_dict={mask_true_ph: mask_true,
-                                                      mask_pred_ph: mask_pred})
+    # Run graph
+    with tf.Session() as sess:
+        output_tensors = [bdry_score, polygons_true, polygons_pred]
+        output_data = sess.run(output_tensors, feed_dict={mask_true_ph: mask_true,
+                                                          mask_pred_ph: mask_pred})
 
-    bdry_score_output, polygons_true_output, polygons_pred_output = output_data
+        bdry_score_output, polygons_true_output, polygons_pred_output = output_data
+    return bdry_score_output, polygons_true_output, polygons_pred_output
 
 
-# testing:
-for i in range(len(polygons_true_output)):
-    image = skimage.io.imread(os.path.join(image_dir, file_names[i]))
-    image, _, _, _, _ = resize_image(image, min_dim=800, min_scale=0,
-                                     max_dim=1024, mode='square')
+if __name__ == '__main__':
+    # prepare data
+    image_dir = '../../datasets/dataset_occluded/images'
 
-    # plot gt polygons
-    fig, axes = plt.subplots(1, 2, figsize=(12, 6))
-    # axes = get_ax(1, 2, size=6)
-    axes[0].imshow(image)
-    verts = polygons_true_output[i]
-    xs, ys = zip(*verts)
-    axes[0].scatter(xs, ys, c='r', s=1)
-    axes[0].axis('off')
-    axes[0].set_title('GT')
+    sample_info = json.load(open('sample_mask_info.json', 'r'))
+    N = len(sample_info)
 
-    # plot predicted polygons
-    axes[1].imshow(image)
-    verts = polygons_pred_output[i]
-    xs, ys = zip(*verts)
-    axes[1].scatter(xs, ys, c='r', s=1)
-    axes[1].axis('off')
-    axes[1].set_title('Prediction')
-    fig.suptitle('bdry_score = %.5f' % bdry_score_output[i])
-    plt.show()
+    ids = [i['id'] for i in sample_info]
+    file_names = [i['file_names'] for i in sample_info]
+    mask_true = []
+    bbox_true = []
+    mask_pred = []
+    bbox_pred = []
+
+    for i in range(N):
+        # GT
+        bbox = sample_info[i]['bbox_true']
+        bbox = np.expand_dims(bbox, 0).astype('int')
+
+        seg = sample_info[i]['mask_true']
+        seg = np.expand_dims(seg, -1)
+        image_shape = (int(sample_info[i]['height']), int(sample_info[i]['width']))
+        seg = expand_mask(bbox, seg, image_shape)
+
+        bbox_true.append(bbox[0])
+        mask_true.append(seg[:, :, 0])
+
+        # predicted
+        bbox = sample_info[i]['bbox_pred']
+        bbox = np.expand_dims(bbox, 0).astype('int')
+
+        seg = sample_info[i]['mask_pred']
+        seg = np.expand_dims(seg, -1)
+        image_shape = (int(sample_info[i]['height']), int(sample_info[i]['width']))
+        seg = expand_mask(bbox, seg, image_shape)
+
+        bbox_pred.append(bbox[0])
+        mask_pred.append(seg[:, :, 0])
+
+        if i == 3:
+            break
+
+    # run graph
+    bdry_score_output, polygons_true_output, polygons_pred_output = \
+        run_graph(mask_true, mask_pred)
+
+    # testing:
+    for i in range(len(polygons_true_output)):
+        image = skimage.io.imread(os.path.join(image_dir, file_names[i]))
+        image, _, _, _, _ = resize_image(image, min_dim=800, min_scale=0,
+                                         max_dim=1024, mode='square')
+
+        # plot gt polygons
+        fig, axes = plt.subplots(1, 2, figsize=(12, 6))
+        # axes = get_ax(1, 2, size=6)
+        axes[0].imshow(image)
+        verts = polygons_true_output[i]
+        xs, ys = zip(*verts)
+        axes[0].scatter(xs, ys, c='r', s=1)
+        axes[0].axis('off')
+        axes[0].set_title('GT')
+
+        # plot predicted polygons
+        axes[1].imshow(image)
+        verts = polygons_pred_output[i]
+        xs, ys = zip(*verts)
+        axes[1].scatter(xs, ys, c='r', s=1)
+        axes[1].axis('off')
+        axes[1].set_title('Prediction')
+        fig.suptitle('bdry_score = %.5f' % bdry_score_output[i])
+        plt.show()
