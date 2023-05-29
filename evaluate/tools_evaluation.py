@@ -31,18 +31,44 @@ def get_ax(num_images, size=6):
         ncols = 4
 
     fig, axes = plt.subplots(nrows, ncols, figsize=(size * ncols, size * nrows))
+    axes = axes.flatten()
     return fig, axes
 
 
-def get_averaged_df(df):
-    avg = df.iloc[:, 2:].mean(skipna=True)
-    # avg = df.fillna(0).mean(skipna=True)
-    avg_df = pd.DataFrame(columns=df.columns)
-    avg_df.loc[0] = ['average', 'average'] + avg.tolist()
+def get_averaged_df(model_names, df_ap, df_bdry, df_iou, df_dice, fill_nan=True):
+    num_images = df_ap.shape[0]
+    num_rois = df_iou.shape[0]
+    print("Number of images: ", num_images)
+    print("Number of ROIs: ", num_rois)
+    index = pd.MultiIndex.from_tuples([(x, y)
+                                       for x in ['map', 'bdry', 'iou', 'dice']
+                                       for y in ['mu', 'std', 'delta_mu']])
+    data = []
 
-    averaged_df = pd.concat([avg_df, df]).reset_index(drop=True)
-    averaged_df.to_csv(sys.stdout, sep='\t', index=False)
-    return averaged_df
+    # for map:
+    std = df_ap.iloc[:, 2:].std(skipna=True)
+    mu = df_ap.iloc[:, 2:].mean(skipna=True)
+    delta_mu = std / np.sqrt(num_images)
+    data = data + [mu, std, delta_mu]
+
+    for df in (df_bdry, df_iou, df_dice):
+        # 0 indicates nothing detected, so we replace it with nan
+        df = df.replace(0, np.nan)
+        std = df_ap.iloc[:, 2:].std(skipna=True)
+        if fill_nan:  # better
+            df = df.fillna(0)
+            mu = df.iloc[:, 2:].mean(skipna=False)
+        else:
+            mu = df.iloc[:, 2:].mean(skipna=True)
+        delta_mu = std / np.sqrt(num_rois)
+        data = data + [mu, std, delta_mu]
+
+    data = np.array(data).T
+
+    df_summary = pd.DataFrame(data, columns=index)
+    df_summary.index = model_names
+    df_summary.to_csv(sys.stdout, sep='\t', index=True)
+    return df_summary
 
 
 def get_matched_iou(iou, gt_match):
@@ -55,6 +81,16 @@ def get_matched_iou(iou, gt_match):
     return matched_iou
 
 
+def get_matched_mask(mask, gt_match):
+    gt_match = gt_match.astype(np.int32)
+    matched_masks = np.ndarray((len(gt_match), mask.shape[0], mask.shape[1]),
+                               dtype=np.bool)
+    for i in range(len(gt_match)):
+        if gt_match[i] == -1:
+            matched_masks[i] = np.zeros((mask.shape[0], mask.shape[1]), dtype=np.bool)
+        else:
+            matched_masks[i] = mask[:, :, gt_match[i]]
+    return matched_masks
 
 
 def compute_overlaps_masks(masks1, masks2):
@@ -92,7 +128,7 @@ def calculate_dice_coefficient(masks1, masks2, smooth=0.00001):
     # intersections and union
     intersections = np.dot(masks1.T, masks2)
 
-    dice = (2. * intersections + smooth) / (area1 + area2 + smooth)
+    dice = (2. * intersections + smooth) / (area1[:, None] + area2[:, None] + smooth)
 
     return dice
 

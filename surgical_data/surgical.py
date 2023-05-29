@@ -312,33 +312,33 @@ if __name__ == '__main__':
         #             augmentation=augmentation,
         #             info=args.info)
 
-        # Training - Stage 1
-        print("Training Stage 1")
-        model.train(dataset_train, dataset_val,
-                    learning_rate=config.LEARNING_RATE,
-                    epochs=60,
-                    layers='heads',
-                    augmentation=augmentation,
-                    info=args.info)
-
-        # Training - Stage 2
-        print("Training Stage 2")
-        model.train(dataset_train, dataset_val,
-                    learning_rate=config.LEARNING_RATE,
-                    epochs=80,
-                    layers='4+',
-                    augmentation=augmentation,
-                    info=args.info)
-
-        # Training - Stage 3
-        # Fine tune all layers
-        print("Training Stage 3")
-        model.train(dataset_train, dataset_val,
-                    learning_rate=config.LEARNING_RATE / 10,
-                    epochs=120,
-                    layers='all',
-                    augmentation=augmentation,
-                    info=args.info)
+        # # Training - Stage 1
+        # print("Training Stage 1")
+        # model.train(dataset_train, dataset_val,
+        #             learning_rate=config.LEARNING_RATE,
+        #             epochs=60,
+        #             layers='heads',
+        #             augmentation=augmentation,
+        #             info=args.info)
+        #
+        # # Training - Stage 2
+        # print("Training Stage 2")
+        # model.train(dataset_train, dataset_val,
+        #             learning_rate=config.LEARNING_RATE,
+        #             epochs=80,
+        #             layers='4+',
+        #             augmentation=augmentation,
+        #             info=args.info)
+        #
+        # # Training - Stage 3
+        # # Fine tune all layers
+        # print("Training Stage 3")
+        # model.train(dataset_train, dataset_val,
+        #             learning_rate=config.LEARNING_RATE / 10,
+        #             epochs=120,
+        #             layers='all',
+        #             augmentation=augmentation,
+        #             info=args.info)
 
         # Training - Stage 1
         # print("Training Stage 1")
@@ -367,6 +367,34 @@ if __name__ == '__main__':
         #             layers='all',
         #             augmentation=augmentation,
         #             info=args.info)
+
+        # Training - Stage 1
+        print("Training Stage 1")
+        model.train(dataset_train, dataset_val,
+                    learning_rate=config.LEARNING_RATE,
+                    epochs=75,
+                    layers='all',
+                    augmentation=augmentation,
+                    info=args.info)
+
+        # Training - Stage 2
+        print("Training Stage 2")
+        model.train(dataset_train, dataset_val,
+                    learning_rate=config.LEARNING_RATE / 10,
+                    epochs=105,
+                    layers='all',
+                    augmentation=augmentation,
+                    info=args.info)
+
+        # Training - Stage 3
+        # Fine tune all layers
+        print("Training Stage 3")
+        model.train(dataset_train, dataset_val,
+                    learning_rate=config.LEARNING_RATE / 100,
+                    epochs=120,
+                    layers='all',
+                    augmentation=augmentation,
+                    info=args.info)
 
     elif args.command == "evaluate":
         # Validation dataset

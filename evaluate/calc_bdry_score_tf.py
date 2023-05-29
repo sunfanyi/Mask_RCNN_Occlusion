@@ -115,12 +115,18 @@ def find_contours_wrapper(mask):
     padded_mask = np.zeros(
         (mask.shape[0] + 2, mask.shape[1] + 2), dtype=np.uint8)
     padded_mask[1:-1, 1:-1] = mask
-    contours = find_contours(padded_mask, 0.5)[0]
+    # contours = find_contours(padded_mask, 0.5)[0]
+    contours = find_contours(padded_mask, 0.5)
 
     # Check if contours exist, if not, return an empty array
     if len(contours) == 0:
         return np.zeros((100, 2), dtype=np.float32)
-    return np.array(contours, dtype=np.float32)  # output as numpy array
+
+    # flatten the contours
+    # contours = np.concatenate(contours, axis=0).astype(np.float32)
+    # choose the largest contour
+    contours = max(contours, key=len).astype(np.float32)
+    return contours
 
 
 def mask2polygon(mask_element):
@@ -146,7 +152,7 @@ def mask2polygon(mask_element):
 
 # Calculate boundary score
 def calc_bdry_score(args):
-    polygon_true, polygon_pred = args
+    polygon_true, polygon_pred, bbox_gt = args
 
     def _calc_score():
         # calculate the difference between polygons
@@ -162,9 +168,13 @@ def calc_bdry_score(args):
         # average the minimum distances
         avg_dist = tf.reduce_mean(min_dist)
 
-        # normalize the average minimum distance to get a score between 0 and 1
-        bdry_score = tf.divide(1.0, tf.add(avg_dist, 1.0))
+        rpn_area = tf.multiply(tf.subtract(bbox_gt[2], bbox_gt[0]),
+                               tf.subtract(bbox_gt[3], bbox_gt[1]))
+        rpn_area = tf.cast(rpn_area, tf.float32)
+        bdry_score = tf.divide(avg_dist, rpn_area)
 
+        # normalize the average minimum distance to get a score between 0 and 1
+        bdry_score = tf.divide(1.0, tf.add(tf.multiply(6000.0, bdry_score), 1.0))
         return bdry_score
 
     # sometimes the polygons are empty after find_contours()
@@ -186,23 +196,25 @@ def calc_bdry_score(args):
     return bdry_score
 
 
-def run_graph(mask_true, mask_pred):
+def run_graph(mask_true, mask_pred, bbox_true):
     mask_true = np.array(mask_true, dtype=np.bool)
     mask_pred = np.array(mask_pred, dtype=np.bool)
+    bbox_true = np.array(bbox_true, dtype=np.int32)
 
     mask_true_ph = tf.placeholder(tf.bool, shape=[None, None, None])
     mask_pred_ph = tf.placeholder(tf.bool, shape=[None, None, None])
+    bbox_ph = tf.placeholder(tf.int32, shape=[None, 4])
 
     input_true = mask_true_ph
     input_pred = mask_pred_ph
     # a = tf.constant([], dtype=tf.bool)
     # input_pred = a
 
-    def _calc_score(pred, true):
+    def _calc_score(pred, true, bbox_true):
         polygons_pred = tf.map_fn(mask2polygon, pred, dtype=tf.int32)
         polygons_true = tf.map_fn(mask2polygon, true, dtype=tf.int32)
         bdry_score = tf.map_fn(calc_bdry_score,
-                               (polygons_true, polygons_pred), dtype=tf.float32)
+                               (polygons_true, polygons_pred, bbox_true), dtype=tf.float32)
         return bdry_score, polygons_true, polygons_pred
 
     both_empty = tf.logical_and(tf.equal(tf.size(input_true), 0),
@@ -217,7 +229,7 @@ def run_graph(mask_true, mask_pred):
             either_empty,
             lambda: (tf.constant(0.0), tf.zeros(shape=[100, 2], dtype=tf.int32),
                      tf.zeros(shape=[100, 2], dtype=tf.int32)),
-            lambda: _calc_score(input_pred, input_true)
+            lambda: _calc_score(input_pred, input_true, bbox_true)
         )
     )
 
@@ -228,7 +240,9 @@ def run_graph(mask_true, mask_pred):
     with tf.Session(config=config) as sess:
         output_tensors = [bdry_score, polygons_true, polygons_pred]
         output_data = sess.run(output_tensors, feed_dict={mask_true_ph: mask_true,
-                                                          mask_pred_ph: mask_pred})
+                                                          mask_pred_ph: mask_pred,
+                                                          bbox_ph: bbox_true
+                                                          })
 
     bdry_score_output, polygons_true_output, polygons_pred_output = output_data
 
@@ -303,7 +317,7 @@ if __name__ == '__main__':
 
     # run graph
     bdry_score_output, polygons_true_output, polygons_pred_output = \
-        run_graph(mask_true, mask_pred)
+        run_graph(mask_true, mask_pred, bbox_true)
 
     # # testing:
     # matplotlib.use('TkAgg')
@@ -332,3 +346,8 @@ if __name__ == '__main__':
     #     axes[1].set_title('Prediction')
     #     fig.suptitle('bdry_score = %.5f' % bdry_score_output[i])
     #     plt.show()
+
+
+
+
+
