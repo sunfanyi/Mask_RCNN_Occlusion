@@ -128,7 +128,7 @@ def calculate_dice_coefficient(masks1, masks2, smooth=0.00001):
     # intersections and union
     intersections = np.dot(masks1.T, masks2)
 
-    dice = (2. * intersections + smooth) / (area1[:, None] + area2[:, None] + smooth)
+    dice = (2. * intersections + smooth) / (area1[:, None] + area2[None, :] + smooth)
 
     return dice
 

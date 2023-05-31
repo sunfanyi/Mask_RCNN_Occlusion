@@ -16,15 +16,17 @@ from mrcnn import utils
 
 #%% Model paths
 
-# setting = 'sur 24 epoches'
-setting = 'occ 24 epoches'
-# setting = 'sur 100 epoches'
-# setting = 'occ 100 epoches'
-# setting = 'sur 120 epoches'
-# setting = 'occ 120 epoches'
+# setting = 'sur 24 epochs'
+# setting = 'occ 24 epochs'
+# setting = 'sur 100 epochs'
+# setting = 'occ 100 epochs'
+# setting = 'sur 120 epochs'
+setting = 'occ 120 epochs'
 
 all_model_paths, model_names = choose_setting(setting)
 
+# all_model_paths = [r"d:\Users\ROG\Desktop\FYP\Mask_RCNN-Occulusion\logs\train_034_occ_120new_area\mask_rcnn_occlusion_0120.h5"]
+# model_names = ['034_e120_bdry']
 # setting = 'sur 24 epoches'
 # p1, n1 = choose_setting(setting)
 # setting = 'sur 100 epoches'
@@ -42,7 +44,8 @@ all_model_paths, model_names = choose_setting(setting)
 num_models = len(all_model_paths)
 
 #%% Load dataset
-subset = 'train'
+subset = 'test'
+# subset = 'train'
 dataset = 'surgical' if 'sur' in all_model_paths[0] else 'occluded'
 
 config, dataset = prepare_dataset_config(dataset, subset)
@@ -66,7 +69,8 @@ start = time.time()
 # img_ids = search_image_ids(dataset, img_names)
 
 # img_ids = dataset.image_ids
-img_ids = np.random.choice(dataset.image_ids, 2, replace=False)
+img_ids = np.random.choice(dataset.image_ids, 5, replace=False)
+# img_ids = [23]
 
 all_imgs = []
 all_gt = []
