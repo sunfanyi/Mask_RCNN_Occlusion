@@ -67,6 +67,11 @@ class SurgicalDataset(utils.Dataset):
 
         image_dir = "{}/{}/surgical2020".format(dataset_dir, subset)
 
+        # surgical = COCO(
+        #     "{}/bad/surgical_sample_bad.json".format(dataset_dir))
+        #
+        # image_dir = dataset_dir
+
         # Load all classes or a subset?
         if not class_ids:
             # All classes
@@ -203,10 +208,14 @@ if __name__ == '__main__':
                         default=DEFAULT_LOGS_DIR,
                         metavar="/path/to/logs/",
                         help='Logs and checkpoints directory (default=logs/)')
-    parser.add_argument('--occluded_only', required=False,
-                        default=False,
-                        metavar="<train all images or occluded only>",
-                        help='Images used for training, all or occluded only')
+    parser.add_argument('--bdry_input', required=False,
+                        default=1,
+                        metavar="<boundary head input>",
+                        help='boundary head input')
+    parser.add_argument('--normalise', required=False,
+                        default='max',
+                        metavar="<normalise boundary score by area or max>",
+                        help='normalise boundary score by area or max')
     parser.add_argument('--limit', required=False,
                         default=500,
                         metavar="<image count>",
@@ -234,12 +243,10 @@ if __name__ == '__main__':
             DETECTION_MIN_CONFIDENCE = 0
         config = InferenceConfig()
 
-    if args.occluded_only:
-        class_ids = list(range(1, 13))
-        config.NUM_CLASSES -= 1
-        config.__init__()
-    else:
-        class_ids = None
+    config.bdry_input = int(args.bdry_input)
+    config.normalise = str(args.normalise).strip()
+
+    class_ids = None
 
     config.display()
 
@@ -250,7 +257,7 @@ if __name__ == '__main__':
     else:
         model = modellib.MaskRCNN(mode="inference", config=config,
                                   model_dir=args.logs)
-"""
+
     # Select weights file to load
     if args.model.lower() == "coco":
         model_path = COCO_MODEL_PATH
@@ -341,38 +348,10 @@ if __name__ == '__main__':
         #             info=args.info)
 
         # Training - Stage 1
-        # print("Training Stage 1")
-        # model.train(dataset_train, dataset_val,
-        #             learning_rate=config.LEARNING_RATE,
-        #             epochs=15,
-        #             layers='all',
-        #             augmentation=augmentation,
-        #             info=args.info)
-        #
-        # # Training - Stage 2
-        # print("Training Stage 2")
-        # model.train(dataset_train, dataset_val,
-        #             learning_rate=config.LEARNING_RATE / 10,
-        #             epochs=21,
-        #             layers='all',
-        #             augmentation=augmentation,
-        #             info=args.info)
-        #
-        # # Training - Stage 3
-        # # Fine tune all layers
-        # print("Training Stage 3")
-        # model.train(dataset_train, dataset_val,
-        #             learning_rate=config.LEARNING_RATE / 100,
-        #             epochs=24,
-        #             layers='all',
-        #             augmentation=augmentation,
-        #             info=args.info)
-
-        # Training - Stage 1
         print("Training Stage 1")
         model.train(dataset_train, dataset_val,
                     learning_rate=config.LEARNING_RATE,
-                    epochs=75,
+                    epochs=15,
                     layers='all',
                     augmentation=augmentation,
                     info=args.info)
@@ -381,7 +360,7 @@ if __name__ == '__main__':
         print("Training Stage 2")
         model.train(dataset_train, dataset_val,
                     learning_rate=config.LEARNING_RATE / 10,
-                    epochs=105,
+                    epochs=21,
                     layers='all',
                     augmentation=augmentation,
                     info=args.info)
@@ -391,10 +370,38 @@ if __name__ == '__main__':
         print("Training Stage 3")
         model.train(dataset_train, dataset_val,
                     learning_rate=config.LEARNING_RATE / 100,
-                    epochs=120,
+                    epochs=24,
                     layers='all',
                     augmentation=augmentation,
                     info=args.info)
+
+        # # Training - Stage 1
+        # print("Training Stage 1")
+        # model.train(dataset_train, dataset_val,
+        #             learning_rate=config.LEARNING_RATE,
+        #             epochs=75,
+        #             layers='all',
+        #             augmentation=augmentation,
+        #             info=args.info)
+        #
+        # # Training - Stage 2
+        # print("Training Stage 2")
+        # model.train(dataset_train, dataset_val,
+        #             learning_rate=config.LEARNING_RATE / 10,
+        #             epochs=105,
+        #             layers='all',
+        #             augmentation=augmentation,
+        #             info=args.info)
+        #
+        # # Training - Stage 3
+        # # Fine tune all layers
+        # print("Training Stage 3")
+        # model.train(dataset_train, dataset_val,
+        #             learning_rate=config.LEARNING_RATE / 100,
+        #             epochs=120,
+        #             layers='all',
+        #             augmentation=augmentation,
+        #             info=args.info)
 
     elif args.command == "evaluate":
         # Validation dataset
@@ -408,4 +415,3 @@ if __name__ == '__main__':
         print("'{}' is not recognized. "
               "Use 'train' or 'evaluate'".format(args.command))
 
-"""

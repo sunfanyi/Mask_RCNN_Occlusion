@@ -25,30 +25,31 @@ import surgical
 matplotlib.use('tkagg')
 
 dataset_dir = '../../datasets/3dStool'
+dataset_dir = 'samples'
 
-dataset_train = surgical.SurgicalDataset()
-dataset_train.load_surgical(dataset_dir, "train")
-dataset_train.prepare()
-
-# Validation dataset
-dataset_val = surgical.SurgicalDataset()
-val_type = "val"
-dataset_val.load_surgical(dataset_dir, val_type)
-dataset_val.prepare()
+# dataset_train = surgical.SurgicalDataset()
+# dataset_train.load_surgical(dataset_dir, "train")
+# dataset_train.prepare()
+#
+# # Validation dataset
+# dataset_val = surgical.SurgicalDataset()
+# val_type = "val"
+# dataset_val.load_surgical(dataset_dir, val_type)
+# dataset_val.prepare()
 
 dataset = surgical.SurgicalDataset()
 surgical = dataset.load_surgical(dataset_dir, "test", return_surgical=True)
 dataset.prepare()
 
-target_id = 8
-for i in range(len(dataset.image_info)):
-    if dataset.image_info[i]['id'] == target_id:
-        target_idx = i
-        break
+# target_id = '00021'
+# for i in range(len(dataset.image_info)):
+#     if dataset.image_info[i]['id'] == target_id:
+#         target_idx = i
+#         break
 
 # n = 1
-image_ids = [target_idx]
-# image_ids = np.random.choice(dataset.image_ids, 1)
+# image_ids = [target_idx]
+image_ids = np.random.choice(dataset.image_ids, 1)
 for image_id in image_ids:
     info = dataset.image_info[image_id]
     # ======================== Load image ==================================
@@ -79,6 +80,6 @@ for image_id in image_ids:
     log("class_ids", class_ids)
     log("bbox", bbox)
     # Display image and instances
-    visualize.display_instances(image, bbox, mask, class_ids, dataset.class_names)
+    visualize.display_instances(image, bbox, mask, class_ids, dataset.class_names, [0.984])
 
 

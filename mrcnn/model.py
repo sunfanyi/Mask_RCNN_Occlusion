@@ -34,18 +34,6 @@ assert LooseVersion(keras.__version__) >= LooseVersion('2.0.8')
 
 # os.environ["NCPUS"] = "4"  # comment for HPC and uncomment locally
 
-"""
-    1: pooled(all_mask) + ROI (default)
-    2: pooled(target mask) + ROI
-    3: pooled(target mask) x ROI
-    4: all mask + High Resolution ROI
-    5: target mask + High Resolution ROI
-    6: target mask x High Resolution ROI
-    7: pooled(all masks) only
-    8: pooled(target mask) only
-    9: ROI only
-"""
-bdry_input = 9
 
 ############################################################
 #  Utility Functions
@@ -1030,7 +1018,7 @@ def get_target_mask(mask, target_class_ids):
     Find the mask map cprresponding to the target class (score map of the target class)
     mask: [batch, num_rois, MASK_POOL_SIZE, MASK_POOL_SIZE, NUM_CLASSES]
     target_class_ids: [batch, num_rois]. Integer class IDs. Zero padded.
-    :return: [batch, MASK_POOL_SIZE, MASK_POOL_SIZE]
+    :return: [batch, num_rois, MASK_POOL_SIZE, MASK_POOL_SIZE, 1]
     """
     target_class_ids = K.reshape(target_class_ids, (-1,))  # [N]
     mask_shape = tf.shape(mask)
@@ -1048,15 +1036,27 @@ def get_target_mask(mask, target_class_ids):
         tf.gather(target_class_ids, positive_ix), tf.int64)
     indices = tf.stack([positive_ix, positive_class_ids], axis=1)
 
-    # Gather the masks (predicted and true) that contribute to loss, dtype = tf.float32 (possibilities)
-    target_mask = tf.gather_nd(mask, indices)  # [N, h, w]
-    target_mask = K.reshape(target_mask, (-1, 200, 28, 28, 1))  # [batch, num_rois, h, w, 1]
+    # # Gather the masks (predicted and true) that contribute to loss, dtype = tf.float32 (possibilities)
+    # target_mask = tf.gather_nd(mask, indices)  # [N, h, w]
+
+    # Gather the masks for the positive ROIs
+    positive_masks = tf.gather_nd(mask, indices)  # [num_positive, height, width]
+
+    # Prepare a tensor of zeros to hold the final mask
+    full_mask = tf.zeros((tf.shape(mask)[0], mask_shape[2], mask_shape[3]), dtype=mask.dtype)
+
+    # Update the full_mask tensor with the positive_masks at the correct indices
+    full_mask = tf.tensor_scatter_nd_update(full_mask,
+                                            tf.expand_dims(positive_ix, axis=-1), positive_masks)
+
+    target_mask = K.reshape(full_mask, (-1, 200, 28, 28, 1))  # [batch, num_rois, h, w, 1]
     return target_mask
 
 
 def build_bdry_score_graph(rois, feature_maps, image_meta, mrcnn_mask,
                            target_class_ids,
                            pool_size, mask_pool_size, num_classes,
+                           bdry_input=1,
                            train_bn=True,
                            fc_layers_size=1024):
     """Builds the computation graph of the mask boundary head of Feature Pyramid Network.
@@ -1072,93 +1072,107 @@ def build_bdry_score_graph(rois, feature_maps, image_meta, mrcnn_mask,
     pool_size: The width of the square feature map generated from ROI Pooling.
     num_classes: number of classes, which determines the depth of the results
     train_bn: Boolean. Train or freeze Batch Norm layers
+    bdry_input:
+    1: pooled(all_mask) + ROI (default)
+    2: pooled(target mask) + ROI
+    3: pooled(target mask) x ROI
+    4: all mask + High Resolution ROI
+    5: target mask + High Resolution ROI
+    6: target mask x High Resolution ROI
+    7: pooled(all masks) only
+    8: pooled(target mask) only
+    9: ROI only
 
     Returns: Mask_bdry [batch, num_rois, num_classes]
     """
-    # ROI Pooling
-    # Shape: [batch, num_rois, MASK_POOL_SIZE, MASK_POOL_SIZE, channels]
-    # def _get_roi():
-    #     return PyramidROIAlign([mask_pool_size, mask_pool_size],
-    #                         name="roi_align_bdry")([rois, image_meta] + feature_maps)
-    # def _get_HR_roi():
-    #     return PyramidROIAlign([mask_pool_size*2, mask_pool_size*2],
-    #                         name="roi_align_bdry")([rois, image_meta] + feature_maps)
+    # Helper function for different boundary head inputs:
+    # Step 1. ROI Align
+    def _roi():
+        return PyramidROIAlign([mask_pool_size, mask_pool_size],
+                            name="roi_align_bdry")([rois, image_meta] + feature_maps)
+    def _HR_roi():
+        return PyramidROIAlign([mask_pool_size*2, mask_pool_size*2],
+                            name="roi_align_bdry")([rois, image_meta] + feature_maps)
+
+    # Step 2. choose input mask
+    def _all_mask():
+        return mrcnn_mask
+    def _target_mask():
+        return KL.Lambda(lambda x: get_target_mask(*x), name="target_mask")(
+            [mrcnn_mask, target_class_ids])
+
+    # Step 3. max pooling
+    def _max_pooling(x):
+        return KL.TimeDistributed(
+            KL.MaxPool2D(pool_size=(2, 2), strides=None, padding='valid'))(x)
+
+    # Step 4. fusion mask and rois
+    def _concat(r, m):
+        return KL.Concatenate(axis=-1)([r, m])
+    def _multiply(r, m):
+        return KL.Multiply()([r, m])
 
     if bdry_input == 1:
         # pooled all masks + rois
-        r = PyramidROIAlign([mask_pool_size, mask_pool_size],
-                            name="roi_align_bdry")([rois, image_meta] + feature_maps)
-        mask = mrcnn_mask
-        m = KL.TimeDistributed(
-            KL.MaxPool2D(pool_size=(2, 2), strides=None, padding='valid'))(mask)
-        x = KL.Concatenate(axis=-1)([r, m])
+        print('pooled all masks + rois')
+        r = _roi()
+        mask = _all_mask()
+        m = _max_pooling(mask)
+        x = _concat(r, m)
     elif bdry_input == 2:
         # pooled target mask + rois
-        r = PyramidROIAlign([mask_pool_size, mask_pool_size],
-                            name="roi_align_bdry")([rois, image_meta] + feature_maps)
-        mask = KL.Lambda(lambda x: get_target_mask(*x), name="target_mask")(
-            [mrcnn_mask, target_class_ids])
-        m = KL.TimeDistributed(
-            KL.MaxPool2D(pool_size=(2, 2), strides=None, padding='valid'))(mask)
-        x = KL.Concatenate(axis=-1)([r, m])
+        print('pooled target mask + rois')
+        r = _roi()
+        mask = _target_mask()
+        m = _max_pooling(mask)
+        x = _concat(r, m)
     elif bdry_input == 3:
         # pooled target mask x rois
-        r = PyramidROIAlign([mask_pool_size, mask_pool_size],
-                            name="roi_align_bdry")([rois, image_meta] + feature_maps)
-        mask = KL.Lambda(lambda x: get_target_mask(*x), name="target_mask")(
-            [mrcnn_mask, target_class_ids])
-        m = KL.TimeDistributed(
-            KL.MaxPool2D(pool_size=(2, 2), strides=None, padding='valid'))(mask)
-        x = KL.Multiply()([r, m])
+        print('pooled target mask x rois')
+        r = _roi()
+        mask = _target_mask()
+        m = _max_pooling(mask)
+        x = _multiply(r, m)
     elif bdry_input == 4:
         # all mask + high resolution rois
-        r = PyramidROIAlign([mask_pool_size*2, mask_pool_size*2],
-                            name="roi_align_bdry")([rois, image_meta] + feature_maps)
-        print(r)
-        mask = mrcnn_mask
-        m = mask
-        print(m)
-        x = KL.Concatenate(axis=-1)([r, m])
-        print(x)
-        x = KL.TimeDistributed(
-            KL.MaxPool2D(pool_size=(2, 2), strides=None, padding='valid'))(x)
+        print('all mask + high resolution rois')
+        r = _HR_roi()
+        mask = _all_mask()
+        m = mask  # no max pooling
+        x = _concat(r, m)
+        x = _max_pooling(x)
     elif bdry_input == 5:
         # target mask + high resolution rois
-        r = PyramidROIAlign([mask_pool_size*2, mask_pool_size*2],
-                            name="roi_align_bdry")([rois, image_meta] + feature_maps)
-        mask = KL.Lambda(lambda x: get_target_mask(*x), name="target_mask")(
-            [mrcnn_mask, target_class_ids])
-        m = mask
-        x = KL.Concatenate(axis=-1)([r, m])
-        x = KL.TimeDistributed(
-            KL.MaxPool2D(pool_size=(2, 2), strides=None, padding='valid'))(x)
+        print('target mask + high resolution rois')
+        r = _HR_roi()
+        mask = _target_mask()
+        m = mask  # no max pooling
+        x = _concat(r, m)
+        x = _max_pooling(x)
     elif bdry_input == 6:
         # target mask x high resolution rois
-        r = PyramidROIAlign([mask_pool_size*2, mask_pool_size*2],
-                            name="roi_align_bdry")([rois, image_meta] + feature_maps)
-        mask = KL.Lambda(lambda x: get_target_mask(*x), name="target_mask")(
-            [mrcnn_mask, target_class_ids])
-        m = mask
-        x = KL.Multiply()([r, m])
-        x = KL.TimeDistributed(
-            KL.MaxPool2D(pool_size=(2, 2), strides=None, padding='valid'))(x)
+        print('target mask x high resolution rois')
+        r = _HR_roi()
+        mask = _target_mask()
+        m = mask  # no max pooling
+        x = _multiply(r, m)
+        x = _max_pooling(x)
     elif bdry_input == 7:
         # pooled all mask only
-        mask = mrcnn_mask
-        m = KL.TimeDistributed(
-            KL.MaxPool2D(pool_size=(2, 2), strides=None, padding='valid'))(mask)
+        print('pooled all mask only')
+        mask = _all_mask()
+        m = _max_pooling(mask)
         x = m
     elif bdry_input == 8:
         # pooled target mask only
-        mask = KL.Lambda(lambda x: get_target_mask(*x), name="target_mask")(
-            [mrcnn_mask, target_class_ids])
-        m = KL.TimeDistributed(
-            KL.MaxPool2D(pool_size=(2, 2), strides=None, padding='valid'))(mask)
+        print('pooled target mask only')
+        mask = _target_mask()
+        m = _max_pooling(mask)
         x = m
     elif bdry_input == 9:
         # rois only
-        r = PyramidROIAlign([mask_pool_size, mask_pool_size],
-                            name="roi_align_bdry")([rois, image_meta] + feature_maps)
+        print('rois only')
+        r = _roi()
         x = r
     else:
         raise ValueError("bdry_input invalid")
@@ -1386,7 +1400,7 @@ def mrcnn_mask_loss_graph(target_masks, target_class_ids, pred_masks):
     return loss
 
 
-def mrcnn_bdry_score_loss_graph(target_masks, target_class_ids, pred_masks, target_bbox,
+def mrcnn_bdry_score_loss_graph(normalise, target_masks, target_class_ids, pred_masks, target_bbox,
                                 pred_bdry_score):
     """Boundary score loss for the boundary head.
 
@@ -1446,8 +1460,13 @@ def mrcnn_bdry_score_loss_graph(target_masks, target_class_ids, pred_masks, targ
     def _calc_score():
         polygons_pred = tf.map_fn(mask2polygon, mask_pred, dtype=tf.int32)
         polygons_true = tf.map_fn(mask2polygon, mask_true, dtype=tf.int32)
-        gt_bdry_score = tf.map_fn(calc_bdry_score,
-                               (polygons_true, polygons_pred, target_bbox), dtype=tf.float32)
+        # gt_bdry_score = tf.map_fn(calc_bdry_score,
+        #                        (polygons_true, polygons_pred, target_bbox, normalise), dtype=tf.float32)
+        gt_bdry_score = tf.map_fn(
+            lambda x: calc_bdry_score(x[0], x[1], x[2], normalise),
+            (polygons_true, polygons_pred, target_bbox),
+            dtype=tf.float32
+        )
         return gt_bdry_score
 
     both_empty = tf.logical_and(tf.equal(tf.size(mask_true), 0), tf.equal(tf.size(mask_pred), 0))
@@ -1724,8 +1743,8 @@ def mask2polygon(mask_element):
 #     return bdry_score
 
 
-def calc_bdry_score(args):
-    polygon_true, polygon_pred, bbox_gt = args
+def calc_bdry_score(polygon_true, polygon_pred, bbox_gt, normalise):
+    # polygon_true, polygon_pred, bbox_gt, normalise = args
 
     def _calc_score():
         # calculate the difference between polygons
@@ -1740,24 +1759,22 @@ def calc_bdry_score(args):
 
         # average the minimum distances
         avg_dist = tf.reduce_mean(min_dist)
-
-        # =============== method 1: normalise by the area, then customised function ===============
-        rpn_area = tf.multiply(tf.subtract(bbox_gt[2], bbox_gt[0]),
-                               tf.subtract(bbox_gt[3], bbox_gt[1]))
-        rpn_area = tf.cast(rpn_area, tf.float32)
-        bdry_score = tf.divide(avg_dist, rpn_area)
+        if normalise == "max":
+            # =============== method 1: normalise by max ===============
+            print("normalise by max")
+            bdry_score = tf.divide(1.0, tf.add(avg_dist, 1.0))
+        elif normalise == "area":
+            # =============== method 2: normalise by area =====
+            print("normalise by area")
+            rpn_area = tf.multiply(tf.subtract(bbox_gt[2], bbox_gt[0]),
+                                   tf.subtract(bbox_gt[3], bbox_gt[1]))
+            rpn_area = tf.cast(rpn_area, tf.float32)
+            bdry_score = tf.divide(avg_dist, rpn_area)
+        else:
+            raise ValueError('normalise must be either "max" or "area"')
 
         # normalize the average minimum distance to get a score between 0 and 1
         bdry_score = tf.divide(1.0, tf.add(tf.multiply(6000.0, bdry_score), 1.0))
-
-        # # =============== method 2: normalise by the area, then min-max scaling later in batch =====
-        # rpn_area = tf.multiply(tf.subtract(bbox_gt[2], bbox_gt[0]),
-        #                        tf.subtract(bbox_gt[3], bbox_gt[1]))
-        # rpn_area = tf.cast(rpn_area, tf.float32)
-        # bdry_score = tf.divide(avg_dist, rpn_area)
-        #
-        # # ================== method 3: min-max scaling later in batch only =========================
-        # bdry_score = avg_dist
 
         return bdry_score
 
@@ -2614,6 +2631,7 @@ class MaskRCNN():
                                                       config.POOL_SIZE,
                                                       config.MASK_POOL_SIZE,
                                                       config.NUM_CLASSES,
+                                                      config.bdry_input,
                                                       train_bn=config.TRAIN_BN,
                                                       fc_layers_size=config.FPN_CLASSIF_FC_LAYERS_SIZE)
 
@@ -2631,7 +2649,8 @@ class MaskRCNN():
                 [target_bbox, target_class_ids, mrcnn_bbox])
             mask_loss = KL.Lambda(lambda x: mrcnn_mask_loss_graph(*x), name="mrcnn_mask_loss")(
                 [target_mask, target_class_ids, mrcnn_mask])
-            bdry_score_loss = KL.Lambda(lambda x: mrcnn_bdry_score_loss_graph(*x), name="bdry_score_loss")(
+            bdry_score_loss = KL.Lambda(lambda x: mrcnn_bdry_score_loss_graph(config.normalise, *x),
+                                        name="bdry_score_loss")(
                 [target_mask, target_class_ids, mrcnn_mask, target_bbox, mrcnn_bdry_score])
 
             # Model
@@ -3009,8 +3028,9 @@ class MaskRCNN():
             max_queue_size=100,
             # workers=workers,
             workers=int(os.environ["NCPUS"]),  # Linux
+            use_multiprocessing=True,  # Linux
             # workers=1,  # Windows
-            use_multiprocessing=True,  # True in Linux and False in windows
+            # use_multiprocessing=False,  # Windows
         )
         self.epoch = max(self.epoch, epochs)
 

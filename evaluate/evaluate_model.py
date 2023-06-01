@@ -16,17 +16,18 @@ from mrcnn import utils
 
 #%% Model paths
 
-# setting = 'sur 24 epochs'
+setting = 'sur 24 epochs'
 # setting = 'occ 24 epochs'
 # setting = 'sur 100 epochs'
 # setting = 'occ 100 epochs'
 # setting = 'sur 120 epochs'
-setting = 'occ 120 epochs'
+# setting = 'occ 120 epochs'
 
 all_model_paths, model_names = choose_setting(setting)
 
-# all_model_paths = [r"d:\Users\ROG\Desktop\FYP\Mask_RCNN-Occulusion\logs\train_034_occ_120new_area\mask_rcnn_occlusion_0120.h5"]
+# all_model_paths = [r"D:\Users\ROG\Desktop\FYP\Mask_RCNN-Occulusion\logs\train_019_sur_120_raw\mask_rcnn_surgical_0120.h5"]
 # model_names = ['034_e120_bdry']
+
 # setting = 'sur 24 epoches'
 # p1, n1 = choose_setting(setting)
 # setting = 'sur 100 epoches'
@@ -69,8 +70,9 @@ start = time.time()
 # img_ids = search_image_ids(dataset, img_names)
 
 # img_ids = dataset.image_ids
-img_ids = np.random.choice(dataset.image_ids, 5, replace=False)
+img_ids = np.random.choice(dataset.image_ids, 15, replace=False)
 # img_ids = [23]
+img_names = [dataset.image_info[i]['id'] for i in img_ids]
 
 all_imgs = []
 all_gt = []
@@ -93,8 +95,6 @@ end = time.time()
 print("Time taken: ", end - start)
 
 #%% Evaluation
-
-img_names = [dataset.image_info[i]['id'] for i in img_ids]
 
 # img_ids = [30]
 # img_names = [dataset.image_info[i]['id'] for i in img_ids]
@@ -200,7 +200,7 @@ _averaged_df_dummy = get_averaged_df(model_names, df_ap, df_bdry, df_iou, df_dic
 _averaged_df = get_averaged_df(model_names, df_ap, df_bdry, df_iou, df_dice, fill_nan=True)
 
 #%% Visualize
-"""
+
 matplotlib.use('TkAgg')
 # names_to_show = [  # in test set
 #     "bottleFGL1_BGL1/n02823428_1219",
@@ -214,8 +214,8 @@ matplotlib.use('TkAgg')
 # ids_to_show = search_image_ids(dataset, names_to_show)
 
 # random 5 images
-ids_to_show = np.random.choice(img_ids, 5, replace=False)
-# ids_to_show = [317]
+# ids_to_show = np.random.choice(img_ids, 5, replace=False)
+ids_to_show = [9]
 
 plt.close('all')
 for i in range(len(img_ids)):
@@ -236,6 +236,7 @@ for i in range(len(img_ids)):
         iou = get_matched_iou(iou, gt_match)
         score_to_show = [iou[_] if _ != -1 else np.nan
                          for _ in pred_match.astype(np.int32)]
+        score_to_show = r['scores']
         visualize.display_instances(all_imgs[i], r['rois'], r['masks'], r['class_ids'],
                                     dataset.class_names, score_to_show, ax=axes[j],
                                     title=model_names[j])
@@ -251,6 +252,7 @@ for i in range(len(img_ids)):
     plt.show()
 
 
-"""
+
+
 
 

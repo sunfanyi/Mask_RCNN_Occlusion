@@ -14,7 +14,7 @@ from pycocotools import mask
 from pycococreatortools.pycococreatortools import resize_binary_mask
 
 dataset_dir = os.path.abspath('samples/')
-annos_dir = os.path.join(dataset_dir, 'bad')
+annos_dir = dataset_dir
 images_dir = dataset_dir
 
 cateogories = [{'id': 1, 'name': 'Burr'}]
@@ -196,11 +196,11 @@ if __name__ == '__main__':
     train_dict = {'images': [], 'annotations': [], 'categories': cateogories}
 
     anno_id_train = 1
-    file_name = '00021_2.json'
+    file_name = '00021.json'
     anno_id_train = add_image_to_list(train_dict, file_name,
                                       anno_id_train)
 
-    target_path_train = os.path.join(dataset_dir, "surgical_sample_bad2.json")
+    target_path_train = os.path.join(dataset_dir, "surgical_sample_bad.json")
     # target_path_val = os.path.join(dataset_dir, 'jsons_my_annos',
     #                                "occlusion_val.json")
     # target_path_test = os.path.join(dataset_dir, 'jsons_my_annos',
