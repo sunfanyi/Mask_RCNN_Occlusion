@@ -9,60 +9,166 @@ DEVICE = "/gpu:0"  # /cpu:0 or /gpu:0
 MODEL_DIR = os.path.join(ROOT_DIR, "logs")
 
 
-def choose_setting(setting):
+def choose_setting(dataset, to_test, epochs_setting=None, norm=None):
     logDIR = r"D:\Users\ROG\Desktop\FYP\Mask_RCNN-Occulusion\logs"
+    assert dataset in ['surgical', 'occlusion']
 
-    if '24' in setting:
-        if setting == 'sur 24 epochs':
-            h5_name = 'mask_rcnn_surgical_0024.h5'
-            model_names = [
-                'train_017_sur_24_raw',
-                'train_018_sur_24_max',
-                'train_028_sur_24_area',
-            ]
-        elif setting == 'occ 24 epochs':
-            h5_name = 'mask_rcnn_occlusion_0024.h5'
-            model_names = [
-                'train_023_occ_24_raw',
-                'train_022_occ_24_max',
-                'train_030_occ_24_area',
-            ]
-    elif '100' in setting:
-        if setting == 'sur 100 epochs':
-            h5_name = 'mask_rcnn_surgical_0100.h5'
-            model_names = [
-                'train_015_sur_100_raw',
-                'train_016_sur_100_max',
-                'train_027_sur_100_area',
-            ]
-        elif setting == 'occ 100 epochs':
-            h5_name = 'mask_rcnn_occlusion_0100.h5'
-            model_names = [
-                'train_021_occ_100_raw',
-                'train_024_occ_100_max',
-                'train_031_occ_100_area',
-            ]
-    elif '120' in setting:
-        if setting == 'sur 120 epochs':
-            h5_name = 'mask_rcnn_surgical_0120.h5'
-            model_names = [
-                'train_019_sur_120_raw',
-                'train_020_sur_120_max',
-                'train_029_sur_120_area',
-            ]
-        elif setting == 'occ 120 epochs':
-            h5_name = 'mask_rcnn_occlusion_0120.h5'
-            model_names = [
-                'train_025_occ_120_raw',
-                'train_026_occ_120_max',
-                'train_032_occ_120_area',
-            ]
-        # elif setting == 'sur new 120 epochs':
-        # elif setting == 'occ new 120 epochs':
+    if to_test == 'epochs':
+        def _get_epochs_24():
+            h5_name = 'mask_rcnn_{}_0024.h5'.format(dataset)
+            if dataset == 'surgical':
+                model_names = [
+                    'train_017_sur_24_raw',
+                    'train_018_sur_24_max',
+                    'train_028_sur_24_area',
+                ]
+            elif dataset == 'occlusion':
+                model_names = [
+                    'train_023_occ_24_raw',
+                    'train_022_occ_24_max',
+                    'train_030_occ_24_area',
+                ]
+            return h5_name, model_names
+
+        def _get_epochs_100():
+            h5_name = 'mask_rcnn_{}_0100.h5'.format(dataset)
+            if dataset == 'surgical':
+                model_names = [
+                    'train_015_sur_100_raw',
+                    'train_016_sur_100_max',
+                    'train_027_sur_100_area',
+                ]
+            elif dataset == 'occlusion':
+                model_names = [
+                    'train_021_occ_100_raw',
+                    'train_024_occ_100_max',
+                    'train_031_occ_100_area',
+                ]
+            return h5_name, model_names
+
+        def _get_epochs_120_1():
+            h5_name = 'mask_rcnn_{}_0120.h5'.format(dataset)
+            if dataset == 'surgical':
+                model_names = [
+                    'train_019_sur_120_raw',
+                    'train_020_sur_120_max',
+                    'train_029_sur_120_area',
+                ]
+            elif dataset == 'occlusion':
+                model_names = [
+                    'train_025_occ_120_raw',
+                    'train_026_occ_120_max',
+                    'train_032_occ_120_area',
+                ]
+            return h5_name, model_names
+
+        def _get_epochs_120_2():
+            h5_name = 'mask_rcnn_{}_0120.h5'.format(dataset)
+            if dataset == 'surgical':
+                model_names = [
+                    'train_036_sur_120new_raw',
+                    'train_035_sur_120new_max',
+                    'train_033_sur_120new_area',
+                ]
+            elif dataset == 'occlusion':
+                model_names = [
+                    'train_038_occ_120new_raw',
+                    'train_037_occ_120new_max',
+                    'train_034_occ_120new_area',
+                ]
+            return h5_name, model_names
+
+        h5_name, name1 = _get_epochs_24()
+        path1 = [os.path.join(logDIR, i, h5_name) for i in name1]
+        h5_name, name2 = _get_epochs_100()
+        path2 = [os.path.join(logDIR, i, h5_name) for i in name2]
+        h5_name, name3 = _get_epochs_120_1()
+        path3 = [os.path.join(logDIR, i, h5_name) for i in name3]
+        h5_name, name4 = _get_epochs_120_2()
+        path4 = [os.path.join(logDIR, i, h5_name) for i in name4]
+        if epochs_setting == 0:
+            model_names = name1 + name2 + name3 + name4
+            all_model_paths = path1 + path2 + path3 + path4
+        else:
+            model_names = eval('name{}'.format(epochs_setting))
+            all_model_paths = eval('path{}'.format(epochs_setting))
+    elif to_test == 'bdry_input':
+        sub_DIR = 'trains_boundary_head_input'
+        h5_name = 'mask_rcnn_{}_0024.h5'.format(dataset)
+
+        def _get_norm_max():
+            if dataset == 'surgical':
+                model_names = ['train_0{}_sur_max_input{}'.
+                               format(i+39, i+1) for i in range(9)]
+            elif dataset == 'occlusion':
+                model_names = ['train_0{}_occ_max_input{}'.
+                               format(i+57, i+1) for i in range(9)]
+            return model_names
+
+        def _get_norm_area():
+            if dataset == 'surgical':
+                model_names = ['train_0{}_sur_area_input{}'.
+                               format(i+48, i+1) for i in range(9)]
+            elif dataset == 'occlusion':
+                model_names = ['train_0{}_occ_area_input{}'.
+                               format(i+66, i+1) for i in range(9)]
+            return model_names
+
+        name_max = _get_norm_max()
+        path_max = [os.path.join(logDIR, sub_DIR, i, h5_name) for i in name_max]
+        name_area = _get_norm_area()
+        path_area = [os.path.join(logDIR, sub_DIR, i, h5_name) for i in name_area]
+        if norm == 'all':
+            model_names = name_max + name_area
+            all_model_paths = path_max + path_area
+        else:
+            model_names = eval('name_{}'.format(norm))
+            all_model_paths = eval('path_{}'.format(norm))
+    elif to_test == 'backbone':
+        sub_DIR = 'trains_backbone'
+        h5_name = 'mask_rcnn_{}_0024.h5'.format(dataset)
+
+        def _get_norm_raw():
+            if dataset == 'surgical':
+                model_names = ['train_017_sur_24_raw',
+                               'train_075_sur_resnet50_raw']
+            elif dataset == 'occlusion':
+                model_names = ['train_023_sur_24_raw',
+                               'train_078_sur_resnet50_raw']
+            return model_names
+
+        def _get_norm_max():
+            if dataset == 'surgical':
+                model_names = ['train_018_sur_24_raw',
+                               'train_076_sur_resnet50_raw']
+            elif dataset == 'occlusion':
+                model_names = ['train_022_sur_24_raw',
+                               'train_079_sur_resnet50_raw']
+            return model_names
+
+        def _get_norm_area():
+            if dataset == 'surgical':
+                model_names = ['train_028_sur_24_raw',
+                               'train_077_sur_resnet50_raw']
+            elif dataset == 'occlusion':
+                model_names = ['train_030_sur_24_raw',
+                               'train_080_sur_resnet50_raw']
+            return model_names
+
+        name_raw = _get_norm_raw()
+        path_raw = [os.path.join(logDIR, sub_DIR, i, h5_name) for i in name_raw]
+        name_max = _get_norm_max()
+        path_max = [os.path.join(logDIR, sub_DIR, i, h5_name) for i in name_max]
+        name_area = _get_norm_area()
+        path_area = [os.path.join(logDIR, sub_DIR, i, h5_name) for i in name_area]
+        if norm == 'all':
+            model_names = name_raw + name_max + name_area
+            all_model_paths = path_raw + path_max + path_area
+        else:
+            model_names = eval('name_{}'.format(norm))
+            all_model_paths = eval('path_{}'.format(norm))
     else:
-        raise ValueError('Invalid setting')
-
-    all_model_paths = [os.path.join(logDIR, i, h5_name) for i in model_names]
+        raise Exception('to_test not found')
     model_names = [i.replace('train_', '') for i in model_names]
     return all_model_paths, model_names
 

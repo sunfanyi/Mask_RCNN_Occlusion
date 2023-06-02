@@ -16,14 +16,32 @@ from mrcnn import utils
 
 #%% Model paths
 
-setting = 'sur 24 epochs'
-# setting = 'occ 24 epochs'
-# setting = 'sur 100 epochs'
-# setting = 'occ 100 epochs'
-# setting = 'sur 120 epochs'
-# setting = 'occ 120 epochs'
+dataset = 'surgical'
+# dataset = 'occlusion'
 
-all_model_paths, model_names = choose_setting(setting)
+# ======================= test normalisation & epochs settings =======================
+to_test = 'epochs'
+# epochs_settings = 0  # all
+epochs_settings = 1  # 24
+# epochs_settings = 2  # 100
+# epochs_settings = 3  # 120 (1)
+# epochs_settings = 4  # 120 (2)
+all_model_paths, model_names = choose_setting(dataset, to_test, epochs_setting=epochs_settings)
+
+# ======================= test boundary head input =======================
+# to_test = 'bdry_input'
+# norm = 'all'
+# norm = 'max'
+# norm = 'area'
+# all_model_paths, model_names = choose_setting(dataset, to_test, norm=norm)
+
+# ======================= test backbone =======================
+# to_test = 'backbone'
+# norm = 'all'
+# norm = 'raw'
+# norm = 'max'
+# norm = 'area'
+# all_model_paths, model_names = choose_setting(dataset, to_test, norm=norm)
 
 # all_model_paths = [r"D:\Users\ROG\Desktop\FYP\Mask_RCNN-Occulusion\logs\train_019_sur_120_raw\mask_rcnn_surgical_0120.h5"]
 # model_names = ['034_e120_bdry']
@@ -47,7 +65,6 @@ num_models = len(all_model_paths)
 #%% Load dataset
 subset = 'test'
 # subset = 'train'
-dataset = 'surgical' if 'sur' in all_model_paths[0] else 'occluded'
 
 config, dataset = prepare_dataset_config(dataset, subset)
 
@@ -69,9 +86,9 @@ start = time.time()
 #     ]
 # img_ids = search_image_ids(dataset, img_names)
 
-# img_ids = dataset.image_ids
-img_ids = np.random.choice(dataset.image_ids, 15, replace=False)
-# img_ids = [23]
+img_ids = dataset.image_ids
+# img_ids = np.random.choice(dataset.image_ids, 15, replace=False)
+# img_ids = [9]
 img_names = [dataset.image_info[i]['id'] for i in img_ids]
 
 all_imgs = []
@@ -101,6 +118,9 @@ print("Time taken: ", end - start)
 
 df_iou = pd.DataFrame(columns=['id (iou)', 'images']+model_names)
 df_dice = pd.DataFrame(columns=['id (dice)', 'images']+model_names)
+df_ap50 = pd.DataFrame(columns=['id (ap50)', 'images']+model_names)
+df_ap75 = pd.DataFrame(columns=['id (ap75)', 'images']+model_names)
+df_ap90 = pd.DataFrame(columns=['id (ap90)', 'images']+model_names)
 df_ap = pd.DataFrame(columns=['id (ap)', 'images']+model_names)
 
 all_gt_masks = []
@@ -122,24 +142,48 @@ for i in range(len(img_ids)):
     ious = []  # each element is a list of ious for each model
     dices = []  # each element is a list of ious for each model
     aps = []  # each element is a value of ap for each model
+    aps50 = []  # each element is a value of ap for each model
+    aps75 = []  # each element is a value of ap for each model
+    aps90 = []  # each element is a value of ap for each model
     for model_name in model_names:
         r = all_predictions[model_name][i]
-        gt_match, pred_match, iou, dice = compute_matches(
+        # at 50 IOU:
+        AP50, precisions50, recalls50, iou, dice, gt_match50 = compute_ap(
             gt['rois'], gt['class_ids'], gt['masks'],
             r['rois'], r['class_ids'], r['scores'], r['masks'])
-        AP, precisions, recalls = compute_ap(gt_match, pred_match)
-        iou = get_matched_iou(iou, gt_match)
-        dice = get_matched_iou(dice, gt_match)
-        masks = get_matched_mask(r['masks'], gt_match)
+
+        # at 75 IOU:
+        AP75, precisions75, recalls75, _, _, _ = compute_ap(
+            gt['rois'], gt['class_ids'], gt['masks'],
+            r['rois'], r['class_ids'], r['scores'], r['masks'], iou_threshold=0.75)
+
+        # at 90 IOU:
+        AP90, precisions90, recalls90, _, _, _ = compute_ap(
+            gt['rois'], gt['class_ids'], gt['masks'],
+            r['rois'], r['class_ids'], r['scores'], r['masks'], iou_threshold=0.90)
+
+        AP_range = compute_ap_range(
+            gt['rois'], gt['class_ids'], gt['masks'],
+            r['rois'], r['class_ids'], r['scores'], r['masks'], verbose=None)
+
+        iou = get_matched_iou(iou, gt_match50)
+        dice = get_matched_iou(dice, gt_match50)
+        masks = get_matched_mask(r['masks'], gt_match50)
 
         ious.append(iou)
         dices.append(dice)
-        aps.append(AP)
+        aps.append(AP_range)
+        aps50.append(AP50)
+        aps75.append(AP75)
+        aps90.append(AP90)
 
         all_pred_masks[model_name].extend([masks[_, :, :]
                                           for _ in range(masks.shape[0])])
 
     df_ap.loc[len(df_ap)] = [id, name] + aps
+    df_ap50.loc[len(df_ap50)] = [id, name] + aps50
+    df_ap75.loc[len(df_ap75)] = [id, name] + aps75
+    df_ap90.loc[len(df_ap90)] = [id, name] + aps90
 
     ious = np.array(ious)
     dices = np.array(dices)
@@ -160,21 +204,28 @@ df_bdry.iloc[:, 2:] = bdrys.T
 
 
 #%% Data processing
-def get_averaged_df(model_names, df_ap, df_bdry, df_iou, df_dice, fill_nan=True):
+def get_averaged_df(model_names, df_ap, df_ap50, df_ap75,
+                    df_ap90, df_bdry, df_iou, df_dice, fill_nan=True):
     num_images = df_ap.shape[0]
     num_rois = df_iou.shape[0]
     print("Number of images: ", num_images)
     print("Number of ROIs: ", num_rois)
     index = pd.MultiIndex.from_tuples([(x, y)
-                                       for x in ['map', 'bdry', 'iou', 'dice']
-                                       for y in ['mu', 'std', 'delta_mu']])
+                                       for x in ['mu', 'std', 'delta_mu']
+                                       for y in ['AP', 'AP50', 'AP75', 'AP90', 'bdry', 'iou', 'dice']])
     data = []
+    all_mu = []
+    all_std = []
+    all_delta_mu = []
 
     # for map:
-    std = df_ap.iloc[:, 2:].std(skipna=True)
-    mu = df_ap.iloc[:, 2:].mean(skipna=True)
-    delta_mu = std / np.sqrt(num_images)
-    data = data + [mu, std, delta_mu]
+    for df in (df_ap, df_ap50, df_ap75, df_ap90):
+        std = df.iloc[:, 2:].std(skipna=True)
+        mu = df.iloc[:, 2:].mean(skipna=True)
+        delta_mu = std / np.sqrt(num_images)
+        all_mu.append(mu)
+        all_std.append(std)
+        all_delta_mu.append(delta_mu)
 
     for df in (df_bdry, df_iou, df_dice):
         # 0 indicates nothing detected, so we replace it with nan
@@ -186,8 +237,11 @@ def get_averaged_df(model_names, df_ap, df_bdry, df_iou, df_dice, fill_nan=True)
         else:
             mu = df.iloc[:, 2:].mean(skipna=True)
         delta_mu = std / np.sqrt(num_rois)
-        data = data + [mu, std, delta_mu]
+        all_mu.append(mu)
+        all_std.append(std)
+        all_delta_mu.append(delta_mu)
 
+    data = all_mu + all_std + all_delta_mu
     data = np.array(data).T
 
     df_summary = pd.DataFrame(data, columns=index)
@@ -196,8 +250,10 @@ def get_averaged_df(model_names, df_ap, df_bdry, df_iou, df_dice, fill_nan=True)
     return df_summary
 
 
-_averaged_df_dummy = get_averaged_df(model_names, df_ap, df_bdry, df_iou, df_dice, fill_nan=False)
-_averaged_df = get_averaged_df(model_names, df_ap, df_bdry, df_iou, df_dice, fill_nan=True)
+_averaged_df_dummy = get_averaged_df(model_names, df_ap, df_ap50,
+                                     df_ap75, df_ap90, df_bdry, df_iou, df_dice, fill_nan=False)
+_averaged_df = get_averaged_df(model_names, df_ap, df_ap50,
+                               df_ap75, df_ap90, df_bdry, df_iou, df_dice, fill_nan=True)
 
 #%% Visualize
 
