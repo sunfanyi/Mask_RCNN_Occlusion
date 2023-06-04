@@ -2,15 +2,29 @@ import os
 import sys
 import tensorflow as tf
 
-ROOT_DIR = os.path.abspath("../")
-sys.path.insert(0, ROOT_DIR)
+sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+# Root directory of the project
+ROOT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.append(ROOT_DIR)  # To find local version of the library
 
 DEVICE = "/gpu:0"  # /cpu:0 or /gpu:0
-MODEL_DIR = os.path.join(ROOT_DIR, "logs")
+
+# env = 'local'
+env = 'hpc'
+
+if env == 'local':
+    DEFAULT_LOGS_DIR = r"../logs"
+    my_LOGS_DIR = r"D:\Users\ROG\Desktop\FYP\Mask_RCNN-Occulusion\logs"
+    sur_dataset_DIR = r'../../datasets/dataset_occluded'
+    occ_dataset_DIR = r'../../datasets/3dStool'
+elif env == 'hpc':
+    DEFAULT_LOGS_DIR = r"/rds/general/user/fs1519/home/FYP/Mask_RCNN-Occlusion/logs"
+    my_LOGS_DIR = r"/rds/general/user/fs1519/home/FYP/Mask_RCNN-Occlusion/my_logs"
+    sur_dataset_DIR = r"/rds/general/user/fs1519/home/FYP/datasets/dataset_occluded"
+    occ_dataset_DIR = r"/rds/general/user/fs1519/home/FYP/datasets/3dStool"
 
 
 def choose_setting(dataset, to_test, epochs_setting=None, norm=None):
-    logDIR = r"D:\Users\ROG\Desktop\FYP\Mask_RCNN-Occulusion\logs"
     assert dataset in ['surgical', 'occlusion']
 
     if to_test == 'epochs':
@@ -25,8 +39,8 @@ def choose_setting(dataset, to_test, epochs_setting=None, norm=None):
             elif dataset == 'occlusion':
                 model_names = [
                     'train_023_occ_24_raw',
-                    'train_022_occ_24_max',
-                    'train_030_occ_24_area',
+                    'train_024_occ_24_max',
+                    'train_031_occ_24_area',
                 ]
             return h5_name, model_names
 
@@ -41,8 +55,8 @@ def choose_setting(dataset, to_test, epochs_setting=None, norm=None):
             elif dataset == 'occlusion':
                 model_names = [
                     'train_021_occ_100_raw',
-                    'train_024_occ_100_max',
-                    'train_031_occ_100_area',
+                    'train_022_occ_100_max',
+                    'train_030_occ_100_area',
                 ]
             return h5_name, model_names
 
@@ -79,13 +93,13 @@ def choose_setting(dataset, to_test, epochs_setting=None, norm=None):
             return h5_name, model_names
 
         h5_name, name1 = _get_epochs_24()
-        path1 = [os.path.join(logDIR, i, h5_name) for i in name1]
+        path1 = [os.path.join(my_LOGS_DIR, i, h5_name) for i in name1]
         h5_name, name2 = _get_epochs_100()
-        path2 = [os.path.join(logDIR, i, h5_name) for i in name2]
+        path2 = [os.path.join(my_LOGS_DIR, i, h5_name) for i in name2]
         h5_name, name3 = _get_epochs_120_1()
-        path3 = [os.path.join(logDIR, i, h5_name) for i in name3]
+        path3 = [os.path.join(my_LOGS_DIR, i, h5_name) for i in name3]
         h5_name, name4 = _get_epochs_120_2()
-        path4 = [os.path.join(logDIR, i, h5_name) for i in name4]
+        path4 = [os.path.join(my_LOGS_DIR, i, h5_name) for i in name4]
         if epochs_setting == 0:
             model_names = name1 + name2 + name3 + name4
             all_model_paths = path1 + path2 + path3 + path4
@@ -115,9 +129,9 @@ def choose_setting(dataset, to_test, epochs_setting=None, norm=None):
             return model_names
 
         name_max = _get_norm_max()
-        path_max = [os.path.join(logDIR, sub_DIR, i, h5_name) for i in name_max]
+        path_max = [os.path.join(my_LOGS_DIR, sub_DIR, i, h5_name) for i in name_max]
         name_area = _get_norm_area()
-        path_area = [os.path.join(logDIR, sub_DIR, i, h5_name) for i in name_area]
+        path_area = [os.path.join(my_LOGS_DIR, sub_DIR, i, h5_name) for i in name_area]
         if norm == 'all':
             model_names = name_max + name_area
             all_model_paths = path_max + path_area
@@ -133,34 +147,34 @@ def choose_setting(dataset, to_test, epochs_setting=None, norm=None):
                 model_names = ['train_017_sur_24_raw',
                                'train_075_sur_resnet50_raw']
             elif dataset == 'occlusion':
-                model_names = ['train_023_sur_24_raw',
-                               'train_078_sur_resnet50_raw']
+                model_names = ['train_023_occ_24_raw',
+                               'train_078_occ_resnet50_raw']
             return model_names
 
         def _get_norm_max():
             if dataset == 'surgical':
-                model_names = ['train_018_sur_24_raw',
-                               'train_076_sur_resnet50_raw']
+                model_names = ['train_018_sur_24_max',
+                               'train_076_sur_resnet50_max']
             elif dataset == 'occlusion':
-                model_names = ['train_022_sur_24_raw',
-                               'train_079_sur_resnet50_raw']
+                model_names = ['train_024_occ_24_max',
+                               'train_079_occ_resnet50_max']
             return model_names
 
         def _get_norm_area():
             if dataset == 'surgical':
-                model_names = ['train_028_sur_24_raw',
-                               'train_077_sur_resnet50_raw']
+                model_names = ['train_028_sur_24_area',
+                               'train_077_sur_resnet50_area']
             elif dataset == 'occlusion':
-                model_names = ['train_030_sur_24_raw',
-                               'train_080_sur_resnet50_raw']
+                model_names = ['train_031_occ_24_area',
+                               'train_080_occ_resnet50_area']
             return model_names
 
         name_raw = _get_norm_raw()
-        path_raw = [os.path.join(logDIR, sub_DIR, i, h5_name) for i in name_raw]
+        path_raw = [os.path.join(my_LOGS_DIR, sub_DIR, i, h5_name) for i in name_raw]
         name_max = _get_norm_max()
-        path_max = [os.path.join(logDIR, sub_DIR, i, h5_name) for i in name_max]
+        path_max = [os.path.join(my_LOGS_DIR, sub_DIR, i, h5_name) for i in name_max]
         name_area = _get_norm_area()
-        path_area = [os.path.join(logDIR, sub_DIR, i, h5_name) for i in name_area]
+        path_area = [os.path.join(my_LOGS_DIR, sub_DIR, i, h5_name) for i in name_area]
         if norm == 'all':
             model_names = name_raw + name_max + name_area
             all_model_paths = path_raw + path_max + path_area
@@ -174,18 +188,16 @@ def choose_setting(dataset, to_test, epochs_setting=None, norm=None):
 
 
 def prepare_dataset_config(dataset, subset):
-    if dataset == 'occluded':
+    if dataset == 'occlusion':
         from occlusion import occlusion
         config = occlusion.OcclusionConfig()
         dataset = occlusion.OcclusionDataset()
-        dataset_DIR = '../../datasets/dataset_occluded'
-        dataset.load_occlusion(dataset_DIR, subset)
+        dataset.load_occlusion(sur_dataset_DIR, subset)
     elif dataset == 'surgical':
         from surgical_data import surgical
         config = surgical.SurgicalConfig()
         dataset = surgical.SurgicalDataset()
-        dataset_DIR = '../../datasets/3dStool'
-        dataset.load_surgical(dataset_DIR, subset)
+        dataset.load_surgical(occ_dataset_DIR, subset)
     else:
         raise Exception('dataset not found')
 
@@ -203,15 +215,13 @@ def prepare_dataset_config(dataset, subset):
 
 
 def prepare_model(MODEL_PATH, config):
-    if 'bdry' in MODEL_PATH:
-        import mrcnn.model as modellib
-    elif 'msrcnn' in MODEL_PATH:
-        import mrcnn.model_msrcnn as modellib
-    else:
+    if 'raw' in MODEL_PATH:
         import mrcnn.model_wo_bdry as modellib
+    else:
+        import mrcnn.model as modellib
 
     with tf.device(DEVICE):
-        model = modellib.MaskRCNN(mode="inference", model_dir=MODEL_DIR,
+        model = modellib.MaskRCNN(mode="inference", model_dir=DEFAULT_LOGS_DIR,
                                   config=config)
 
     print("Loading weights ", MODEL_PATH)

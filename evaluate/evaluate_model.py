@@ -1,15 +1,19 @@
 #%%
-import time
-import random
+# import time
+# import random
+
 import matplotlib
+matplotlib.use('TkAgg')
 
 from prepare_evaluation import *
 from tools_evaluation import *
 from calc_bdry_score_tf import run_graph
 
 ROOT_DIR = os.path.abspath("../")
-sys.path.insert(0, ROOT_DIR)
-from mrcnn import visualize
+# ROOT_DIR = r"/rds/general/user/fs1519/home/FYP/Mask_RCNN-Occlusion"
+# ROOT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+sys.path.append(ROOT_DIR)  # To find local version of the library
 import mrcnn.model as modellib
 from mrcnn import utils
 
@@ -46,19 +50,8 @@ all_model_paths, model_names = choose_setting(dataset, to_test, epochs_setting=e
 # all_model_paths = [r"D:\Users\ROG\Desktop\FYP\Mask_RCNN-Occulusion\logs\train_019_sur_120_raw\mask_rcnn_surgical_0120.h5"]
 # model_names = ['034_e120_bdry']
 
-# setting = 'sur 24 epoches'
-# p1, n1 = choose_setting(setting)
-# setting = 'sur 100 epoches'
-# p2, n2 = choose_setting(setting)
-# all_model_paths = p1 + p2
-# model_names = n1 + n2
-
-# all_model_paths = [
-#     r"D:\Users\ROG\Desktop\FYP\Mask_RCNN-Occulusion\logs\_train_040_sur_msrcnn_24\mask_rcnn_surgical_0024.h5",
-# ]
-# model_names = [
-#     '040_e24_msrcnn',
-# ]
+# all_model_paths = [all_model_paths[:3]]
+# model_names = [model_names[:3]]
 
 num_models = len(all_model_paths)
 
@@ -71,11 +64,17 @@ config, dataset = prepare_dataset_config(dataset, subset)
 #%% Load weights
 all_models = []
 for path in all_model_paths:
-    model = prepare_model(path, config)
+    _config = config
+    if to_test == 'backbone':
+        if 'resnet50' in path:
+            _config.BACKBONE = "resnet50"
+        else:
+            _config.BACKBONE = "resnet101"
+    model = prepare_model(path, _config)
     all_models.append(model)
 
 #%% Prediction
-start = time.time()
+# start = time.time()
 
 # img_names = [
 #     "aeroplaneFGL1_BGL1/n02690373_3378",
@@ -86,9 +85,9 @@ start = time.time()
 #     ]
 # img_ids = search_image_ids(dataset, img_names)
 
-img_ids = dataset.image_ids
-# img_ids = np.random.choice(dataset.image_ids, 15, replace=False)
-# img_ids = [9]
+# img_ids = dataset.image_ids
+# img_ids = np.random.choice(dataset.image_ids, 5, replace=False)
+img_ids = [9]
 img_names = [dataset.image_info[i]['id'] for i in img_ids]
 
 all_imgs = []
@@ -107,9 +106,9 @@ for image_id in img_ids:
         _detected = all_models[i].detect([image], verbose=0)[0]
         all_predictions[model_names[i]].append(_detected)
 
-end = time.time()
-
-print("Time taken: ", end - start)
+# end = time.time()
+#
+# print("Time taken: ", end - start)
 
 #%% Evaluation
 
@@ -130,7 +129,7 @@ all_bboxes = []
 
 for i in range(len(img_ids)):
     id = img_ids[i]
-    print(id)
+    # print(id)
     name = img_names[i]
 
     gt = all_gt[i]
@@ -255,7 +254,29 @@ _averaged_df_dummy = get_averaged_df(model_names, df_ap, df_ap50,
 _averaged_df = get_averaged_df(model_names, df_ap, df_ap50,
                                df_ap75, df_ap90, df_bdry, df_iou, df_dice, fill_nan=True)
 
+
+#%% all data
+
+metrics = ['AP', 'AP50', 'AP75', 'AP90', 'bdry', 'iou', 'dice']
+_all_dfs = []
+
+for idx, df in enumerate([df_ap, df_ap50, df_ap75, df_ap90, df_bdry, df_iou, df_dice]):
+    _df = df.rename(columns={df.columns[0]: 'id'})
+    _df = _df.melt(id_vars=['id', 'images'],
+                   var_name='model_name',
+                   value_name=metrics[idx])
+    _all_dfs.append(_df)
+
+# df_final = reduce(lambda left,right: pd.merge(left,right,on=['id', 'images', 'model_name']), _all_dfs)
+df_final = _all_dfs[0]
+
+for df in _all_dfs[1:]:
+    df_final = pd.merge(df_final, df, on=['id', 'images', 'model_name'])
+
+df_final.to_csv('all_data.csv', index=False)
 #%% Visualize
+
+from mrcnn import visualize
 
 matplotlib.use('TkAgg')
 # names_to_show = [  # in test set
