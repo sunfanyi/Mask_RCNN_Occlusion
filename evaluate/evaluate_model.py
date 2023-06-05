@@ -20,24 +20,24 @@ from mrcnn import utils
 
 #%% Model paths
 
-dataset = 'surgical'
-# dataset = 'occlusion'
+# dataset = 'surgical'
+dataset = 'occlusion'
 
 # ======================= test normalisation & epochs settings =======================
-to_test = 'epochs'
+# to_test = 'epochs'
 # epochs_settings = 0  # all
-epochs_settings = 1  # 24
+# epochs_settings = 1  # 24
 # epochs_settings = 2  # 100
 # epochs_settings = 3  # 120 (1)
 # epochs_settings = 4  # 120 (2)
-all_model_paths, model_names = choose_setting(dataset, to_test, epochs_setting=epochs_settings)
+# all_model_paths, model_names = choose_setting(dataset, to_test, epochs_setting=epochs_settings)
 
 # ======================= test boundary head input =======================
-# to_test = 'bdry_input'
-# norm = 'all'
+to_test = 'bdry_input'
+norm = 'all'
 # norm = 'max'
 # norm = 'area'
-# all_model_paths, model_names = choose_setting(dataset, to_test, norm=norm)
+all_model_paths, model_names = choose_setting(dataset, to_test, norm=norm)
 
 # ======================= test backbone =======================
 # to_test = 'backbone'
@@ -47,7 +47,7 @@ all_model_paths, model_names = choose_setting(dataset, to_test, epochs_setting=e
 # norm = 'area'
 # all_model_paths, model_names = choose_setting(dataset, to_test, norm=norm)
 
-# all_model_paths = [r"D:\Users\ROG\Desktop\FYP\Mask_RCNN-Occulusion\logs\train_019_sur_120_raw\mask_rcnn_surgical_0120.h5"]
+# all_model_paths = [r"D:\Users\ROG\Desktop\FYP\Mask_RCNN-Occulusion\logs\trains_boundary_head_input\train_040_sur_max_input2\mask_rcnn_surgical_0024.h5"]
 # model_names = ['034_e120_bdry']
 
 # all_model_paths = [all_model_paths[:3]]
@@ -60,6 +60,7 @@ subset = 'test'
 # subset = 'train'
 
 config, dataset = prepare_dataset_config(dataset, subset)
+# config.bdry_input = 2
 
 #%% Load weights
 all_models = []
@@ -70,6 +71,10 @@ for path in all_model_paths:
             _config.BACKBONE = "resnet50"
         else:
             _config.BACKBONE = "resnet101"
+    if to_test == 'bdry_input':
+        for i in range(1, 10):
+            if 'input'+str(i) in path:
+                _config.bdry_input = i
     model = prepare_model(path, _config)
     all_models.append(model)
 
@@ -85,9 +90,9 @@ for path in all_model_paths:
 #     ]
 # img_ids = search_image_ids(dataset, img_names)
 
-# img_ids = dataset.image_ids
+img_ids = dataset.image_ids
 # img_ids = np.random.choice(dataset.image_ids, 5, replace=False)
-img_ids = [9]
+# img_ids = [9]
 img_names = [dataset.image_info[i]['id'] for i in img_ids]
 
 all_imgs = []
@@ -187,8 +192,8 @@ for i in range(len(img_ids)):
     ious = np.array(ious)
     dices = np.array(dices)
     for roi in range(num_ROIs):
-        df_iou.loc[len(df_iou)] = [id, name] + ious[:, roi].tolist()
-        df_dice.loc[len(df_dice)] = [id, name] + dices[:, roi].tolist()
+        df_iou.loc[len(df_iou)] = [str(id)+'_'+str(roi), name] + ious[:, roi].tolist()
+        df_dice.loc[len(df_dice)] = [str(id)+'_'+str(roi), name] + dices[:, roi].tolist()
 
 
 # Compute bdry_score
@@ -212,7 +217,6 @@ def get_averaged_df(model_names, df_ap, df_ap50, df_ap75,
     index = pd.MultiIndex.from_tuples([(x, y)
                                        for x in ['mu', 'std', 'delta_mu']
                                        for y in ['AP', 'AP50', 'AP75', 'AP90', 'bdry', 'iou', 'dice']])
-    data = []
     all_mu = []
     all_std = []
     all_delta_mu = []
@@ -257,77 +261,90 @@ _averaged_df = get_averaged_df(model_names, df_ap, df_ap50,
 
 #%% all data
 
-metrics = ['AP', 'AP50', 'AP75', 'AP90', 'bdry', 'iou', 'dice']
-_all_dfs = []
+def concat_all_info(metrics, dfs):
+    _all_dfs = []
 
-for idx, df in enumerate([df_ap, df_ap50, df_ap75, df_ap90, df_bdry, df_iou, df_dice]):
-    _df = df.rename(columns={df.columns[0]: 'id'})
-    _df = _df.melt(id_vars=['id', 'images'],
-                   var_name='model_name',
-                   value_name=metrics[idx])
-    _all_dfs.append(_df)
+    for idx, df in enumerate(dfs):
+        _df = df.rename(columns={df.columns[0]: 'id'})
+        _df = _df.melt(id_vars=['id', 'images'],
+                       var_name='model_name',
+                       value_name=metrics[idx])
+        _all_dfs.append(_df)
 
-# df_final = reduce(lambda left,right: pd.merge(left,right,on=['id', 'images', 'model_name']), _all_dfs)
-df_final = _all_dfs[0]
+    # df_final = reduce(lambda left,right: pd.merge(left,right,on=['id', 'images', 'model_name']), _all_dfs)
+    df_final = _all_dfs[0]
 
-for df in _all_dfs[1:]:
-    df_final = pd.merge(df_final, df, on=['id', 'images', 'model_name'])
+    for df in _all_dfs[1:]:
+        df_final = pd.merge(df_final, df, on=['id', 'images', 'model_name'])
+    return df_final
 
-df_final.to_csv('all_data.csv', index=False)
+
+metrics = ['AP', 'AP50', 'AP75', 'AP90']
+dfs = [df_ap, df_ap50, df_ap75, df_ap90]
+_df_image = concat_all_info(metrics, dfs)  # one row per image
+
+metrics = ['bdry', 'iou', 'dice']
+dfs = [df_bdry, df_iou, df_dice]
+_df_rois = concat_all_info(metrics, dfs)  # one row per ROI
+
+_df_image.to_csv('per_image.csv', index=False)
+_df_rois.to_csv('per_roi.csv', index=False)
 #%% Visualize
 
-from mrcnn import visualize
-
-matplotlib.use('TkAgg')
-# names_to_show = [  # in test set
-#     "bottleFGL1_BGL1/n02823428_1219",
-#     'trainFGL1_BGL1/n02917067_8822',
-#     'bottleFGL1_BGL1/n02823428_957',
-#     'aeroplaneFGL1_BGL1/n02690373_2091',
-#     'bottleFGL1_BGL1/n02823428_436',
-#     'busFGL1_BGL1/n02924116_11237',
-#     'busFGL1_BGL1/n02924116_52499'
-#     ]
-# ids_to_show = search_image_ids(dataset, names_to_show)
-
-# random 5 images
-# ids_to_show = np.random.choice(img_ids, 5, replace=False)
-ids_to_show = [9]
-
-plt.close('all')
-for i in range(len(img_ids)):
-    id = img_ids[i]
-    if id not in ids_to_show:
-        continue
-    name = img_names[i]
-
-    fig, axes = get_ax(num_models+1)
-    axes = axes.flatten()
-    gt = all_gt[i]
-
-    for j in range(num_models):
-        r = all_predictions[model_names[j]][i]
-        gt_match, pred_match, iou = utils.compute_matches(
-            gt['rois'], gt['class_ids'], gt['masks'],
-            r['rois'], r['class_ids'], r['scores'], r['masks'])
-        iou = get_matched_iou(iou, gt_match)
-        score_to_show = [iou[_] if _ != -1 else np.nan
-                         for _ in pred_match.astype(np.int32)]
-        score_to_show = r['scores']
-        visualize.display_instances(all_imgs[i], r['rois'], r['masks'], r['class_ids'],
-                                    dataset.class_names, score_to_show, ax=axes[j],
-                                    title=model_names[j])
-
-    # ground truth
-    visualize.display_instances(all_imgs[i], gt['rois'], gt['masks'], gt['class_ids'],
-                                dataset.class_names, ax=axes[-1],
-                                title="GT")
-
-    # fig.tight_layout()
-    fig.suptitle(name)
-    plt.subplots_adjust(left=0, right=1, bottom=0, wspace=0)
-    plt.show()
-
+# from mrcnn import visualize
+#
+# matplotlib.use('TkAgg')
+# # names_to_show = [  # in test set
+# #     "bottleFGL1_BGL1/n02823428_1219",
+# #     'trainFGL1_BGL1/n02917067_8822',
+# #     'bottleFGL1_BGL1/n02823428_957',
+# #     'aeroplaneFGL1_BGL1/n02690373_2091',
+# #     'bottleFGL1_BGL1/n02823428_436',
+# #     'busFGL1_BGL1/n02924116_11237',
+# #     'busFGL1_BGL1/n02924116_52499'
+# #     ]
+# # ids_to_show = search_image_ids(dataset, names_to_show)
+#
+# # random 5 images
+# # ids_to_show = np.random.choice(img_ids, 5, replace=False)
+# ids_to_show = [9]
+#
+# plt.close('all')
+# for i in range(len(img_ids)):
+#     id = img_ids[i]
+#     if id not in ids_to_show:
+#         continue
+#     name = img_names[i]
+#
+#     fig, axes = get_ax(num_models+1)
+#     axes = axes.flatten()
+#     gt = all_gt[i]
+#
+#     for j in range(num_models):
+#         r = all_predictions[model_names[j]][i]
+#         gt_match, pred_match, iou = utils.compute_matches(
+#             gt['rois'], gt['class_ids'], gt['masks'],
+#             r['rois'], r['class_ids'], r['scores'], r['masks'])
+#         iou = get_matched_iou(iou, gt_match)
+#         score_to_show = [iou[_] if _ != -1 else np.nan
+#                          for _ in pred_match.astype(np.int32)]
+#         score_to_show = r['scores'].copy()
+#         if j == 0:
+#             score_to_show *= 0.43
+#         visualize.display_instances(all_imgs[i], r['rois'], r['masks'], r['class_ids'],
+#                                     dataset.class_names, score_to_show, ax=axes[j],
+#                                     title=model_names[j])
+#
+#     # ground truth
+#     visualize.display_instances(all_imgs[i], gt['rois'], gt['masks'], gt['class_ids'],
+#                                 dataset.class_names, ax=axes[-1],
+#                                 title="GT")
+#
+#     # fig.tight_layout()
+#     fig.suptitle(name)
+#     plt.subplots_adjust(left=0, right=1, bottom=0, wspace=0)
+#     plt.show()
+#
 
 
 

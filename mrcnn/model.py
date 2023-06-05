@@ -1013,7 +1013,7 @@ def build_fpn_mask_graph(rois, feature_maps, image_meta,
     return x
 
 
-def get_target_mask(mask, target_class_ids):
+def get_target_mask(inference, mask, target_class_ids):
     """
     Find the mask map cprresponding to the target class (score map of the target class)
     mask: [batch, num_rois, MASK_POOL_SIZE, MASK_POOL_SIZE, NUM_CLASSES]
@@ -1049,7 +1049,10 @@ def get_target_mask(mask, target_class_ids):
     full_mask = tf.tensor_scatter_nd_update(full_mask,
                                             tf.expand_dims(positive_ix, axis=-1), positive_masks)
 
-    target_mask = K.reshape(full_mask, (-1, 200, 28, 28, 1))  # [batch, num_rois, h, w, 1]
+    if inference:
+        target_mask = K.reshape(full_mask, (-1, 100, 28, 28, 1))  # [batch, num_rois, h, w, 1]
+    else:
+        target_mask = K.reshape(full_mask, (-1, 200, 28, 28, 1))  # [batch, num_rois, h, w, 1]
     return target_mask
 
 
@@ -1058,7 +1061,8 @@ def build_bdry_score_graph(rois, feature_maps, image_meta, mrcnn_mask,
                            pool_size, mask_pool_size, num_classes,
                            bdry_input=1,
                            train_bn=True,
-                           fc_layers_size=1024):
+                           fc_layers_size=1024,
+                           inference=False):
     """Builds the computation graph of the mask boundary head of Feature Pyramid Network.
     concat all mask and rois
 
@@ -1098,7 +1102,7 @@ def build_bdry_score_graph(rois, feature_maps, image_meta, mrcnn_mask,
     def _all_mask():
         return mrcnn_mask
     def _target_mask():
-        return KL.Lambda(lambda x: get_target_mask(*x), name="target_mask")(
+        return KL.Lambda(lambda x: get_target_mask(inference, *x), name="target_mask")(
             [mrcnn_mask, target_class_ids])
 
     # Step 3. max pooling
@@ -1735,11 +1739,10 @@ def calc_bdry_score(polygon_true, polygon_pred, bbox_gt, normalise):
                                    tf.subtract(bbox_gt[3], bbox_gt[1]))
             rpn_area = tf.cast(rpn_area, tf.float32)
             bdry_score = tf.divide(avg_dist, rpn_area)
+            # normalize the average minimum distance to get a score between 0 and 1
+            bdry_score = tf.divide(1.0, tf.add(tf.multiply(6000.0, bdry_score), 1.0))
         else:
             raise ValueError('normalise must be either "max" or "area"')
-
-        # normalize the average minimum distance to get a score between 0 and 1
-        bdry_score = tf.divide(1.0, tf.add(tf.multiply(6000.0, bdry_score), 1.0))
 
         return bdry_score
 
@@ -2645,6 +2648,7 @@ class MaskRCNN():
 
             # Create masks for detections
             detection_boxes = KL.Lambda(lambda x: x[..., :4])(detections)
+            class_ids = KL.Lambda(lambda x: x[..., 4])(detections)
             mrcnn_mask = build_fpn_mask_graph(detection_boxes, mrcnn_feature_maps,
                                               input_image_meta,
                                               config.MASK_POOL_SIZE,
@@ -2652,15 +2656,17 @@ class MaskRCNN():
                                               train_bn=config.TRAIN_BN)
 
             # mrcnn_bdry_score = build_bdry_score_graph(rpn_rois, mrcnn_feature_maps,
-            mrcnn_bdry_score = build_bdry_score_graph_inference(detection_boxes, mrcnn_feature_maps,
+            mrcnn_bdry_score = build_bdry_score_graph(detection_boxes, mrcnn_feature_maps,
                                                       input_image_meta,
                                                       mrcnn_mask,
+                                                      class_ids,
                                                       config.POOL_SIZE,
                                                       config.MASK_POOL_SIZE,
                                                       config.NUM_CLASSES,
+                                                      config.bdry_input,
                                                       train_bn=config.TRAIN_BN,
-                                                      fc_layers_size=config.FPN_CLASSIF_FC_LAYERS_SIZE)
-
+                                                      fc_layers_size=config.FPN_CLASSIF_FC_LAYERS_SIZE,
+                                                      inference=True)
 
             model = KM.Model([input_image, input_image_meta, input_anchors],
                              [detections, mrcnn_class, mrcnn_bbox,
