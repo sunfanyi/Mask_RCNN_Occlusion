@@ -6,7 +6,7 @@ temp/
 test/
 _logfiles/
 _pbsfiles/
-evaluate/plot_data_final.ipynb
+evaluate/
 *.h5
 *.png
 *.jpeg

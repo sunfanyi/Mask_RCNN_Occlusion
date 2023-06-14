@@ -12,6 +12,7 @@ import json
 import numpy as np
 import random
 import matplotlib
+matplotlib.use('TkAgg')
 import matplotlib.pyplot as plt
 
 
@@ -22,10 +23,9 @@ from mrcnn.model import log
 # from mrcnn.visualize import display_images, draw_box
 # from mrcnn.utils import minimize_mask, expand_mask
 import surgical
-matplotlib.use('tkagg')
 
 dataset_dir = '../../datasets/3dStool'
-dataset_dir = 'samples'
+# dataset_dir = 'samples'
 
 # dataset_train = surgical.SurgicalDataset()
 # dataset_train.load_surgical(dataset_dir, "train")
@@ -47,9 +47,10 @@ dataset.prepare()
 #         target_idx = i
 #         break
 
+matplotlib.use('tkagg')
 # n = 1
 # image_ids = [target_idx]
-image_ids = np.random.choice(dataset.image_ids, 1)
+image_ids = np.random.choice(dataset.image_ids, 10)
 for image_id in image_ids:
     info = dataset.image_info[image_id]
     # ======================== Load image ==================================
@@ -60,7 +61,7 @@ for image_id in image_ids:
 
     # ========================= Display images and masks ===================
     mask, class_ids = dataset.load_mask(image_id)
-    visualize.display_top_masks(image, mask, class_ids, dataset.class_names)
+    # visualize.display_top_masks(image, mask, class_ids, dataset.class_names)
     # plt.figure()
     # plt.title('manual_mask')
     # plt.axis('off')
@@ -80,6 +81,7 @@ for image_id in image_ids:
     log("class_ids", class_ids)
     log("bbox", bbox)
     # Display image and instances
-    visualize.display_instances(image, bbox, mask, class_ids, dataset.class_names, [0.984])
+    # visualize.display_instances(image, bbox, mask, class_ids, dataset.class_names, [0.984])
+    visualize.display_instances(image, bbox, mask, class_ids, dataset.class_names)
 
 

@@ -1230,83 +1230,6 @@ def build_bdry_score_graph(rois, feature_maps, image_meta, mrcnn_mask,
     return mrcnn_bdry_score
 
 
-def build_bdry_score_graph_inference(rois, feature_maps, image_meta, mask,
-                           pool_size, mask_pool_size, num_classes,
-                           train_bn=True,
-                           fc_layers_size=1024):
-    """Builds the computation graph of the mask boundary head of Feature Pyramid Network.
-    concat all mask and rois
-
-    rois: [batch, num_rois, (y1, x1, y2, x2)] Proposal boxes in normalized
-          coordinates.
-    feature_maps: List of feature maps from different layers of the pyramid,
-                  [P2, P3, P4, P5]. Each has a different resolution.
-    mask: [batch, num_rois, MASK_POOL_SIZE, MASK_POOL_SIZE, NUM_CLASSES]
-    image_meta: [batch, (meta data)] Image details. See compose_image_meta()
-    pool_size: The width of the square feature map generated from ROI Pooling.
-    num_classes: number of classes, which determines the depth of the results
-    train_bn: Boolean. Train or freeze Batch Norm layers
-
-    Returns: Mask_bdry [batch, num_rois, num_classes]
-    """
-    # ROI Pooling
-    # Shape: [batch, num_rois, MASK_POOL_SIZE, MASK_POOL_SIZE, channels]
-    r = PyramidROIAlign([mask_pool_size, mask_pool_size],
-                        name="roi_align_bdry")(
-        [rois, image_meta] + feature_maps)
-    # Conv layers
-    m = KL.TimeDistributed(
-        KL.MaxPool2D(pool_size=(2, 2), strides=None, padding='valid'))(mask)
-    x = KL.Concatenate(axis=-1)([r, m])
-    x = KL.TimeDistributed(KL.Conv2D(256, (3, 3), padding="same"),
-                           name="mrcnn_bdry_conv1")(x)
-    x = KL.TimeDistributed(BatchNorm(),
-                           name='mrcnn_bdry_bn1')(x, training=train_bn)
-    x = KL.Activation('relu')(x)
-
-    x = KL.TimeDistributed(KL.Conv2D(256, (3, 3), padding="same"),
-                           name="mrcnn_bdry_conv2")(x)
-    x = KL.TimeDistributed(BatchNorm(),
-                           name='mrcnn_bdry_bn2')(x, training=train_bn)
-    x = KL.Activation('relu')(x)
-
-    x = KL.TimeDistributed(KL.Conv2D(256, (3, 3), padding="same"),
-                           name="mrcnn_bdry_conv3")(x)
-    x = KL.TimeDistributed(BatchNorm(),
-                           name='mrcnn_bdry_bn3')(x, training=train_bn)
-    x = KL.Activation('relu')(x)
-
-    # Pool layers
-    x = KL.TimeDistributed(
-        KL.MaxPool2D(pool_size=(2, 2), strides=None, padding='valid',
-                     data_format=None))(x)
-
-    # Two 1024 FC layers (implemented with Conv2D for consistency)
-    x = KL.TimeDistributed(
-        KL.Conv2D(fc_layers_size, (pool_size, pool_size), padding="valid"),
-        name="mrcnn_bdry_conv4")(x)
-    x = KL.TimeDistributed(BatchNorm(), name='mrcnn_bdry_bn4')(x,
-                                                               training=train_bn)
-    x = KL.Activation('relu')(x)
-    x = KL.TimeDistributed(KL.Conv2D(fc_layers_size, (1, 1)),
-                           name="mrcnn_bdry_conv5")(x)
-    x = KL.TimeDistributed(BatchNorm(), name='mrcnn_bdry_bn5')(x,
-                                                               training=train_bn)
-    x = KL.Activation('relu')(x)
-
-    # shared = KL.Lambda(lambda x: K.squeeze(K.squeeze(x, 3), 2),
-    #                 name="pool_bdry_squeeze")(x)
-    # Mask bdry head
-    # s = KL.TimeDistributed(KL.Dense(units = num_classes, activation='softmax'))(shared)
-    s = KL.TimeDistributed(KL.Conv2D(filters=num_classes, kernel_size=(1, 1),
-                                     activation='softmax'))(x)
-    mrcnn_bdry_score = s
-
-    mrcnn_bdry_score = tf.convert_to_tensor(mrcnn_bdry_score)
-    return mrcnn_bdry_score
-
-
-
 ############################################################
 #  Loss Functions
 ############################################################
@@ -1481,6 +1404,18 @@ def mrcnn_mask_loss_graph(target_masks, target_class_ids, pred_masks):
     return loss
 
 
+def loss_control_threshold(y_true, y_pred):
+    """
+    Selection of training samples, if gt_bdry_score is greater than threshold,
+    then use smooth_l1_loss, otherwise, loss is 0
+    """
+    threshold = 0.0
+    loss = K.switch(K.greater(y_true, threshold),
+                    smooth_l1_loss(y_true, y_pred),
+                    tf.constant(0.0))
+    return loss
+
+
 def mrcnn_bdry_score_loss_graph(normalise, target_masks, target_class_ids, pred_masks, target_bbox,
                                 pred_bdry_score):
     """Boundary score loss for the boundary head.
@@ -1567,6 +1502,7 @@ def mrcnn_bdry_score_loss_graph(normalise, target_masks, target_class_ids, pred_
 
     loss = K.switch(tf.size(y_true) > 0,
                     smooth_l1_loss(y_true, y_pred),
+                    # loss_control_threshold(y_true, y_pred),
                     tf.constant(0.0))
     loss = K.mean(loss)
     return loss
@@ -1697,19 +1633,6 @@ def mask2polygon(mask_element):
     result = tf.cond(tf.greater(tf.size(mask_element), 0), case_one, case_two)
     # result = tf.cond(tf.greater(tf.shape(mask_element)[0], 0), case_one, case_two)
     return result
-
-
-# Calculate boundary score
-# def calc_bdry_score(args):
-#     polygon_true, polygon_pred = args
-#
-#     # search for the cloest point
-#     diff = polygon_pred[:, tf.newaxis, :] - polygon_true[tf.newaxis, :, :]
-#     diff = tf.cast(diff, tf.float32)
-#     all_dist = tf.sqrt(tf.reduce_sum(tf.square(diff), axis=-1))
-#     min_dist = tf.reduce_min(all_dist, axis=1)  # [num_points]
-#     bdry_score = tf.reduce_mean(min_dist) / tf.cast(tf.shape(min_dist)[0], tf.float32)
-#     return bdry_score
 
 
 def calc_bdry_score(polygon_true, polygon_pred, bbox_gt, normalise):
@@ -2592,6 +2515,14 @@ class MaskRCNN():
                                               config.NUM_CLASSES,
                                               train_bn=config.TRAIN_BN)
 
+            # proposal_count = config.POST_NMS_ROIS_TRAINING if mode == "training" \
+            #     else config.POST_NMS_ROIS_INFERENCE
+            # rpn_rois = ProposalLayer(
+            #     proposal_count=proposal_count,
+            #     nms_threshold=config.RPN_NMS_THRESHOLD,
+            #     name="ROI",
+            #     config=config)([rpn_class, rpn_bbox, anchors])
+            #
             mrcnn_bdry_score = build_bdry_score_graph(rois, mrcnn_feature_maps,
                                                       input_image_meta,
                                                       mrcnn_mask,

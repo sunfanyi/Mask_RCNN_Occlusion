@@ -12,6 +12,7 @@ import json
 import numpy as np
 import random
 import matplotlib
+matplotlib.use('TkAgg')
 import matplotlib.pyplot as plt
 
 
@@ -22,33 +23,33 @@ from mrcnn.model import log
 # from mrcnn.visualize import display_images, draw_box
 # from mrcnn.utils import minimize_mask, expand_mask
 import occlusion
-matplotlib.use('tkagg')
 
 dataset_dir = '../../datasets/dataset_occluded'
 
-dataset_train = occlusion.OcclusionDataset()
-dataset_train.load_occlusion(dataset_dir, "train")
-dataset_train.prepare()
-
-# Validation dataset
-dataset_val = occlusion.OcclusionDataset()
-val_type = "val"
-dataset_val.load_occlusion(dataset_dir, val_type)
-dataset_val.prepare()
+# dataset_train = occlusion.OcclusionDataset()
+# dataset_train.load_occlusion(dataset_dir, "train")
+# dataset_train.prepare()
+#
+# # Validation dataset
+# dataset_val = occlusion.OcclusionDataset()
+# val_type = "val"
+# dataset_val.load_occlusion(dataset_dir, val_type)
+# dataset_val.prepare()
 
 dataset = occlusion.OcclusionDataset()
 occlusion = dataset.load_occlusion(dataset_dir, "test", return_occlusion=True)
 dataset.prepare()
 
-target_id = "aeroplaneFGL1_BGL1/n02690373_3378"
-for i in range(len(dataset.image_info)):
-    if dataset.image_info[i]['id'] == target_id:
-        target_idx = i
-        break
+# target_id = "aeroplaneFGL1_BGL1/n02690373_3378"
+# for i in range(len(dataset.image_info)):
+#     if dataset.image_info[i]['id'] == target_id:
+#         target_idx = i
+#         break
 
 # n = 1
-image_ids = [target_idx]
-# image_ids = np.random.choice(dataset.image_ids, 1)
+# image_ids = [target_idx]
+image_ids = np.random.choice(dataset.image_ids, 10)
+matplotlib.use('tkagg')
 for image_id in image_ids:
     info = dataset.image_info[image_id]
     # ======================== Load image ==================================
@@ -58,8 +59,8 @@ for image_id in image_ids:
 
 
     # ========================= Display images and masks ===================
-    mask, class_ids = dataset.load_mask(image_id)
-    visualize.display_top_masks(image, mask, class_ids, dataset.class_names)
+    # mask, class_ids = dataset.load_mask(image_id)
+    # visualize.display_top_masks(image, mask, class_ids, dataset.class_names)
     # plt.figure()
     # plt.title('manual_mask')
     # plt.axis('off')

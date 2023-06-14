@@ -100,6 +100,8 @@ class Config(object):
     # ROIs kept after non-maximum suppression (training and inference)
     POST_NMS_ROIS_TRAINING = 2000
     POST_NMS_ROIS_INFERENCE = 1000
+    # POST_NMS_ROIS_TRAINING = 500
+    # POST_NMS_ROIS_INFERENCE = 250
 
     # If enabled, resizes instance masks to a smaller size to reduce
     # memory load. Recommended when using high-resolution images.
@@ -148,6 +150,7 @@ class Config(object):
     # ratio of 1:3. You can increase the number of proposals by adjusting
     # the RPN NMS threshold.
     TRAIN_ROIS_PER_IMAGE = 200
+    # TRAIN_ROIS_PER_IMAGE = 50
 
     # Percent of positive ROIs used to train classifier/mask heads
     ROI_POSITIVE_RATIO = 0.33
@@ -198,14 +201,6 @@ class Config(object):
         "mrcnn_mask_loss": 1.,
         "bdry_score_loss": 1.,
     }
-    # LOSS_WEIGHTS = {
-    #     "rpn_class_loss": 1.,
-    #     "rpn_bbox_loss": 1.,
-    #     "mrcnn_class_loss": 1.,
-    #     "mrcnn_bbox_loss": 1.,
-    #     "mrcnn_mask_loss": 1.,
-    #     "mrcnn_mask_dice_loss": 1.
-    # }
 
     # Use RPN ROIs or externally generated ROIs for training
     # Keep this True for most situations. Set to False if you want to train
