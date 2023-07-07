@@ -22,6 +22,7 @@ class Config(object):
     bdry_input = 1  # override in subclass
     normalise = 'max'  # override in subclass
 
+
     # Name the configurations. For example, 'COCO', 'Experiment 3', ...etc.
     # Useful if your code needs to do things differently depending on which
     # experiment is running.
@@ -95,13 +96,14 @@ class Config(object):
     RPN_TRAIN_ANCHORS_PER_IMAGE = 256
     
     # ROIs kept after tf.nn.top_k and before non-maximum suppression
-    PRE_NMS_LIMIT = 6000
+    # PRE_NMS_LIMIT = 6000
+    PRE_NMS_LIMIT = 1500
 
     # ROIs kept after non-maximum suppression (training and inference)
-    POST_NMS_ROIS_TRAINING = 2000
-    POST_NMS_ROIS_INFERENCE = 1000
-    # POST_NMS_ROIS_TRAINING = 500
-    # POST_NMS_ROIS_INFERENCE = 250
+    # POST_NMS_ROIS_TRAINING = 2000
+    # POST_NMS_ROIS_INFERENCE = 1000
+    POST_NMS_ROIS_TRAINING = 500
+    POST_NMS_ROIS_INFERENCE = 250
 
     # If enabled, resizes instance masks to a smaller size to reduce
     # memory load. Recommended when using high-resolution images.
@@ -149,8 +151,8 @@ class Config(object):
     # enough positive proposals to fill this and keep a positive:negative
     # ratio of 1:3. You can increase the number of proposals by adjusting
     # the RPN NMS threshold.
-    TRAIN_ROIS_PER_IMAGE = 200
-    # TRAIN_ROIS_PER_IMAGE = 50
+    # TRAIN_ROIS_PER_IMAGE = 200
+    TRAIN_ROIS_PER_IMAGE = 50
 
     # Percent of positive ROIs used to train classifier/mask heads
     ROI_POSITIVE_RATIO = 0.33
@@ -199,7 +201,7 @@ class Config(object):
         "mrcnn_class_loss": 1.,
         "mrcnn_bbox_loss": 1.,
         "mrcnn_mask_loss": 1.,
-        "bdry_score_loss": 1.,
+        "bdry_delta_loss": 1.,
     }
 
     # Use RPN ROIs or externally generated ROIs for training
